@@ -35,15 +35,15 @@ ifeq ($(PLAT),msys2)
 else ifeq ($(PLAT),cygwin)
     # Cygwin: system GSL; DDS must be a Cygwin-built shared library
     PLAT_INCLUDES =
-    PLAT_LDFLAGS  = -L../lib
+    PLAT_LDFLAGS  = -L../lib -Wl,-rpath,\$$ORIGIN/../../../../lib
     PLAT_LIBS     = -ldds -lgsl -lgslcblas
     EXE_SUFFIX    = .exe
 
 else
-    # Linux / WSL — libdds linked by path; GSL/boost come from system (../lib has MinGW builds)
+    # Linux / WSL — prefer shared libdds so DDS can come from a normal ELF .so
     PLAT_INCLUDES =
-    PLAT_LDFLAGS  =
-    PLAT_LIBS     = ../lib/libdds.a -lboost_thread -lboost_system -lm -lrt -lgsl -lgslcblas
+    PLAT_LDFLAGS  = -L../lib -Wl,-rpath,\$$ORIGIN/../../../../lib
+    PLAT_LIBS     = -ldds -lboost_thread -lboost_system -lm -lrt -lgsl -lgslcblas
     EXE_SUFFIX    =
 endif
 
