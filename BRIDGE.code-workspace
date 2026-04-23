@@ -1,0 +1,23 @@
+{
+    "settings": {
+        "makefile.configureOnOpen": false
+    },
+    "folders": [
+        {
+            "name": "BridgeLab",
+            "path": "."
+        },
+        {
+            "name": "Deallab",
+            "path": "deallab"
+        },
+        {
+            "name": "Bidlab",
+            "path": "bidlab"
+        },
+        {
+            "name": "Shared",
+            "path": "shared"
+        }
+    ]
+}

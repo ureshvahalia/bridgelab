@@ -1,0 +1,3 @@
+$Any := (Points >= 0);
+$NoAction := (Points < 11);
+end

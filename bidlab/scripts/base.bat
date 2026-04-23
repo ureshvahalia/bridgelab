@@ -1,0 +1,1 @@
+.\bidlab -i %1.txt -o %2.csv -v details.csv %3 $Any $NoAction $Any $NoAction

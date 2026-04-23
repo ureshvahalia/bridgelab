@@ -1,0 +1,22 @@
+$Any := (Points >= 0);
+$.P. := (Points < 12);
+$bal := (shape [4,3,3,3] OR [4,4,3,2] OR [5,3,3,2]);
+$unbal :=  NOT $bal;
+$1DHSstrength := (12 TO 16 Points);
+$.1N. := (14 TO 16 Points) AND $bal;
+$.2N. := (20 TO 21 Points) AND $bal;
+$.1S. := $1DHSstrength AND (Spades > 4) AND NOT $.1N.;
+$.1H. := $1DHSstrength AND (Hearts > 4) AND NOT $.1N.;
+$.2C. := $1DHSstrength AND (Clubs > 4) AND ((Hearts ?= 4) OR (Spades ?= 4) OR (Clubs > 5));
+$.1D. := $1DHSstrength AND NOT ($.1N. OR $.1S. OR $.1H. OR $.2C.);
+$.1C. := (Points > 16) AND NOT $.2N.;
+$bal3cardSpadeLimRaise := (10 TO 11 Points) AND (Spades ?= 3) AND $bal;
+$.1S.1N. := ((7 TO 11 Points) AND (Spades < 3)) OR $bal3cardSpadeLimRaise;
+$.1S.1N.2C. := (12 TO 14 Points) AND (Clubs > 3) AND (Hearts < 4) AND (Spades ?= 5);
+$.1S.1N.2C.3S. := $bal3cardSpadeLimRaise;
+$.1S.1N.2C.3D. := (10 TO 11 Points) AND (Diamonds > 5) AND (Spades < 3);
+$.1S.1N.2C.3H. := (10 TO 11 Points) AND (Hearts > 4) AND (Spades < 3);
+$.1S.1N.2C.3C. := (10 TO 11 Points) AND (Clubs > 3) AND (Spades < 3);
+$.1S.1N.2C.2N. := (Points ?= 11) AND (Spades < 3) AND ($bal OR (pattern [1-4-4-4] OR [1-4-5-3]));
+$RelevantSet := (12 TO 14 Points) AND (Clubs > 2) AND (Hearts < 4) AND (Spades ?= 5) AND ((Diamonds < 4) OR (pattern [5-0-4-4])) AND NOT $.1N.;
+end

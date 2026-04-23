@@ -1,0 +1,33 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug myprogram",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/msys2/Debug/myprogram.exe",
+            "args": ["-d", "statwork", "-p", "2N3Nc", "-S", "-F", "2Nina.csv", "-E", "2048", "2048"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder};${workspaceFolder}/bin/Debug;C:/msys64/ucrt64/bin;${env:PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build",
+            "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+            "miDebuggerArgs": "-q -silent",
+            "targetArchitecture": "x86_64",
+        }
+    ]
+}

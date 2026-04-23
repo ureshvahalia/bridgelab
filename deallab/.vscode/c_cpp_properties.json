@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Dealer",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/../shared/**",
+                "C:/msys64/ucrt64/include"            ],
+            "defines": [
+                "DEALER",
+                "DEBUG2",
+                "_WIN32"
+            ],
+            "compilerPath": "C:/msys64/ucrt64/bin/g++.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-gcc-x64"
+        }
+    ],
+    "version": 4
+}

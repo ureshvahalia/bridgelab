@@ -1,0 +1,33 @@
+# Build outputs
+bin/
+obj/
+
+# Generated parser/scanner files (old calc.* and current bridge.*)
+calc.parser.cc
+calc.parser.hh
+calc.scanner.cc
+bridge.parser.cc
+bridge.parser.hh
+bridge.scanner.cc
+bridge.parser.output
+lex.yy.c
+
+# Program output at project root
+output*.csv
+details*.csv
+results.csv
+
+# Test-generated output (baseline.csv is the oracle)
+test/results.csv
+test/bbo.lin
+
+# Release packaging artefacts
+Package/
+
+# Windows executable artifacts
+*.pdb
+
+# Editor/OS junk
+.DS_Store
+Thumbs.db
+*~

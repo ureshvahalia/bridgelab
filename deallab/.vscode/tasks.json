@@ -1,0 +1,45 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "C:/msys64/usr/bin/make.exe",
+            "args": [],
+            "options": {
+                "env": {
+                    "TEMP": "${env:LOCALAPPDATA}\\Temp",
+                    "TMP": "${env:LOCALAPPDATA}\\Temp"
+                }
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "Build the project using Makefile (auto-detects platform)"
+        },
+        {
+            "label": "clean",
+            "type": "shell",
+            "command": "C:/msys64/usr/bin/make.exe",
+            "args": [
+                "clean"
+            ],
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "clean-all",
+            "type": "shell",
+            "command": "C:/msys64/usr/bin/make.exe",
+            "args": [
+                "clean-all"
+            ],
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}

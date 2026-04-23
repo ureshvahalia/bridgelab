@@ -1,0 +1,25 @@
+$Any := (Points >= 0);
+$ntop := (shape [4,3,3,3] OR [4,4,3,2] OR [5,3,3,2]);
+$.1n. := (14 TO 16 Points) AND ($ntop);
+$.2n. := (20 TO 21 Points) AND ($ntop);
+$notBalanced :=  NOT ($ntop);
+$openingHand := (12 TO 16 Points);
+$.1s. := $openingHand AND (Spades > 4) AND NOT $.1n.;
+$.1h. := $openingHand AND (Hearts > 4) AND NOT $.1n.;
+$.2C. := $openingHand AND (Clubs > 4) AND ((Hearts ?= 4) OR (Spades ?= 4) OR (Clubs > 5));
+$.1D. := $openingHand AND NOT ($.1n. OR $.1s. OR $.1h. OR $.2C.);
+$.1C. := (Points > 16) AND NOT $.2n.;
+$.P. := (Points < 12);
+$.2N.3H. := (Spades > 4) AND (Hearts != 4);
+$.2N.3H.3S. := (Spades < 4);
+$.2N.3H.3N. := (Spades ?= 5) AND (shape [5,3,3,2]);
+$.2N.3H.4C. := (Spades > 3) AND (Clubs > 3);
+$.2N.3H.4D. := (Spades > 3) AND (Diamonds > 3);
+$.2N.3H.4H. := (Spades > 3) AND (Hearts > 3);
+$.2N.3H.4S. := (pattern [4-3-3-3]);
+$.2N.3H.3S.3N. := (4 TO 9 Points) AND (Clubs < 5) AND (Diamonds < 5) AND (Hearts < 4);
+$.2N.3H.3S.4C. := (Points > 4) AND (Clubs > 4);
+$.2N.3H.3S.4D. := (Points > 4) AND (Diamonds > 4);
+$.2N.3H.3S.4H. := (Points > 2) AND (Hearts > 4);
+$weakXferToS := $.2N.3H. AND (Points < 5);
+end

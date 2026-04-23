@@ -1,0 +1,42 @@
+# ── Build outputs ─────────────────────────────────────────────────────────────
+deallab/bin/
+deallab/obj/
+bidlab/bin/
+bidlab/obj/
+
+# ── Flex/Bison generated files ────────────────────────────────────────────────
+shared/bridge.parser.cc
+shared/bridge.parser.hh
+shared/bridge.scanner.cc
+
+# ── Libraries and pre-built binaries ──────────────────────────────────────────
+# lib/dds.h is the DDS public API header and IS tracked; all binaries are not.
+lib/*.a
+lib/*.dll
+lib/*.dll.a
+lib/ucrt64/
+lib/mingw64/
+lib/pkgconfig/
+
+# ── Program output ────────────────────────────────────────────────────────────
+deallab/output/
+bidlab/output/
+deallab/details.csv
+deallab/output.csv
+deallab/results.csv
+
+# ── Development artefacts not useful to repo consumers ────────────────────────
+refactoring_plan.md
+
+# ── Legacy backup directories ─────────────────────────────────────────────────
+Bidder.sav/
+dealer290.vscode/
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
+.vscode/*.log
+.claude/
+*.bak
+*.orig
+.DS_Store
+Thumbs.db
+*~

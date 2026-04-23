@@ -1,0 +1,48 @@
+# Build outputs
+bin/
+obj/
+
+# Flex/Bison generated files
+src/bridge.parser.cc
+src/bridge.parser.hh
+src/bridge.scanner.cc
+
+# Libraries, DLLs, executables, and third-party headers
+lib/
+gsl/
+*.dll
+*.lib
+*.a
+*.exe
+
+# Generated documentation
+html/
+
+# Program output
+output/
+details.csv
+output.csv
+results.csv
+
+# Test-generated output (baseline.txt is the oracle; everything else is regenerated)
+test/testresults.txt
+test/test*_north.txt
+test/test*_south.txt
+test/test*_east.txt
+test/test*_west.txt
+test/test*_all.txt
+test/test*DDA.csv
+test/test*SDA.csv
+test/test*BBO.lin
+test/DDA.csv
+test/SDA.csv
+test/_*.txt
+
+# Temporary / scratch files
+tmp/
+
+# Editor / OS files
+.vscode/*.log
+.claude/
+*.bak
+*.orig

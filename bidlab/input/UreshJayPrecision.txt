@@ -1,0 +1,1251 @@
+## ============================================================
+## Uresh-Jay Precision Bidding System
+## Derived from "Uresh-Jay Precision.docx"
+##
+## Key differences from standard Precision:
+##   1C  = 16+ HCP (unbal) or 17-19/22+ (bal); balanced 16 opens 1N
+##   1N  = 14-16 HCP balanced (or off-shape with no 5-card major)
+##   2N  = 20-21 HCP balanced
+##   2C  = natural, 5+ clubs with 4-card major or 6+ clubs
+##   2D  = 3-suiter short in diamonds (4+S, 4+H, 4+C, <=1D)
+##   1N responses: 2S = range ask or clubs; 3C = diamonds; 2N = minors
+##   XYZ applies after 1D-1H-1S, 1D-1H-1N, 1D-1S-1N, 1H-1S-1N
+## ============================================================
+
+## ---- Helpers ----
+
+$Any := Points >= 0 ;
+
+## Balanced: 4333, 4432, 5332
+$balanced := shape [4,3,3,3] OR shape [4,4,3,2] OR shape [5,3,3,2] ;
+
+## Off-shape NT: 5422 or 6322 with no 5-card major
+$offshapeNT := (shape [5,4,2,2] OR shape [6,3,2,2]) AND Hearts < 5 AND Spades < 5 ;
+
+## 2N hand: balanced 20-21
+$2Nhand := (20 TO 21 Points) AND $balanced ;
+
+## Opening-hand range for non-1C bids (11-15 HCP)
+$openingHand := 11 TO 15 Points ;
+
+## No 4-card major (used in many NT sequences)
+$noMajor4 := Spades < 4 AND Hearts < 4 ;
+
+## Balanced with no 4-card major
+$balNoMajor := $balanced AND $noMajor4 ;
+
+## Positive response to 1C: 8+ HCP
+$posResp := Points >= 8 ;
+
+## Game values opposite a 11-15 opener: 12+ HCP
+$gf := Points >= 12 ;
+
+## Invitational: 10-11 HCP
+$inv := 10 TO 11 Points ;
+
+## Weak: 0-7 HCP
+$weak := Points <= 7 ;
+
+
+## ============================================================
+## OPENING BIDS
+## ============================================================
+
+## 1N: 14-16 HCP, balanced or off-shape with no 5-card major
+## Includes the "balanced 16" that does NOT open 1C per system rules
+$.1N. := (14 TO 16 Points) AND ($balanced OR $offshapeNT) ;
+
+## 2N: 20-21 HCP, balanced
+$.2N. := $2Nhand ;
+
+## 1C: 16+ HCP any shape, excluding 1N and 2N hands
+## Covers: 16 HCP unbalanced, 17-19 balanced, 22+ balanced, 16+ unbalanced
+$.1C. := Points >= 16 AND NOT $.1N. AND NOT $.2N. ;
+
+## 1S: 11-15 HCP, 5+ spades, not a 1N hand
+$.1S. := $openingHand AND Spades >= 5 AND NOT $.1N. ;
+
+## 1H: 11-15 HCP, 5+ hearts, fewer than 5 spades, not a 1N hand
+$.1H. := $openingHand AND Hearts >= 5 AND Spades < 5 AND NOT $.1N. ;
+
+## 2C: 11-15 HCP, 5+ clubs, 4-card major OR 6+ clubs, no 5-card major
+$.2C. := $openingHand AND Clubs >= 5 AND Spades < 5 AND Hearts < 5 AND
+         (Spades >= 4 OR Hearts >= 4 OR Clubs >= 6) AND NOT $.1N. ;
+
+## 1D: 11-15 HCP, catchall (all hands not opened 1C/1N/1S/1H/2C)
+$.1D. := $openingHand AND NOT ($.1N. OR $.1S. OR $.1H. OR $.2C.) ;
+
+## 2H: Weak two, 6+ hearts, 5-10 HCP, fewer than 4 spades
+$.2H. := (5 TO 10 Points) AND Hearts >= 6 AND Spades < 4 ;
+
+## 2S: Weak two, 6+ spades, 5-10 HCP
+$.2S. := (5 TO 10 Points) AND Spades >= 6 ;
+
+## 2D: Three-suited, short in diamonds (4+ in each of S/H/C, at most 1 diamond)
+$.2D. := $openingHand AND Diamonds <= 1 AND Clubs >= 4 AND Hearts >= 4 AND Spades >= 4 ;
+
+## 3C: Preemptive, 6+ clubs, 5-10 HCP
+$.3C. := (5 TO 10 Points) AND Clubs >= 6 AND Hearts < 4 AND Spades < 4 ;
+
+## 3D: Preemptive, 6+ diamonds, 5-10 HCP
+$.3D. := (5 TO 10 Points) AND Diamonds >= 6 AND Hearts < 4 AND Spades < 4 ;
+
+## Pass: fewer than 11 HCP and not a preemptive hand
+$.P. := Points < 11 AND NOT $.2H. AND NOT $.2S. AND NOT $.2D. AND NOT $.3C. AND NOT $.3D. ;
+
+
+## ============================================================
+## 1C RESPONSES
+## ============================================================
+
+## 1D: Negative, 0-7 HCP, any distribution
+$.1C.1D. := Points <= 7 ;
+
+## 1H: Positive, 5+ hearts, 8+ HCP
+$.1C.1H. := $posResp AND Hearts >= 5 ;
+
+## 1S: Positive, 5+ spades, fewer than 5 hearts, 8+ HCP
+$.1C.1S. := $posResp AND Spades >= 5 AND Hearts < 5 ;
+
+## 1N: Positive, balanced, 8-10 HCP (not a one-suited hand)
+$.1C.1N. := (8 TO 10 Points) AND $balanced ;
+
+## 2C: Positive, 5+ clubs, no 5-card major, 8+ HCP
+$.1C.2C. := $posResp AND Clubs >= 5 AND Hearts < 5 AND Spades < 5 ;
+
+## 2D: Positive, 5+ diamonds, no 5-card major or clubs, 8+ HCP
+$.1C.2D. := $posResp AND Diamonds >= 5 AND Hearts < 5 AND Spades < 5 AND Clubs < 5 ;
+
+## 2H: Game forcing, 6+ hearts (self-sufficient suit)
+$.1C.2H. := $posResp AND Hearts >= 6 ;
+
+## 2S: Game forcing, 6+ spades (self-sufficient suit)
+$.1C.2S. := $posResp AND Spades >= 6 ;
+
+
+## ============================================================
+## 1C – 1D: OPENER'S REBIDS
+## ============================================================
+
+## 1H: 5+ hearts, unbalanced, any 1C-range strength
+$.1C.1D.1H. := Hearts >= 5 AND NOT $balanced ;
+
+## 1S: 5+ spades, no 5-card heart suit, unbalanced
+$.1C.1D.1S. := Spades >= 5 AND Hearts < 5 AND NOT $balanced ;
+
+## 1N: Balanced, 17-19 HCP (the hands that open 1C but are balanced 17-19)
+$.1C.1D.1N. := (17 TO 19 Points) AND $balanced ;
+
+## 2C: 5+ clubs, no 5-card major, no 5-card diamonds, unbalanced
+$.1C.1D.2C. := Clubs >= 5 AND Hearts < 5 AND Spades < 5 AND Diamonds < 5 AND NOT $balanced ;
+
+## 2D: 5+ diamonds, no 5-card major, unbalanced
+$.1C.1D.2D. := Diamonds >= 5 AND Hearts < 5 AND Spades < 5 AND NOT $balanced ;
+
+## 2N: Balanced, 23-24 HCP
+$.1C.1D.2N. := (23 TO 24 Points) AND $balanced ;
+
+
+## ============================================================
+## 1C – 1D – 1H: RESPONDER'S REBIDS
+## Per system: 1N temporizing; 3m = good 6-card suit;
+## 2S = splinter limit raise; 2N = good 6+ spades
+## ============================================================
+
+## 1N: Temporizing (any negative hand, content to pass at low level)
+$.1C.1D.1H.1N. := Points <= 7 ;
+
+## 2H: Simple raise (3+ hearts, any weak hand)
+$.1C.1D.1H.2H. := Points <= 7 AND Hearts >= 3 ;
+
+## 2S: Splinter limit raise (singleton/void spades, 4+ hearts)
+$.1C.1D.1H.2S. := Points <= 7 AND Hearts >= 4 AND Spades <= 1 ;
+
+## 2N: Good 6+ spade suit (independent suit, looking for game in spades)
+$.1C.1D.1H.2N. := Spades >= 6 AND Spts >= 3 ;
+
+## 3C: Good 6+ club suit
+$.1C.1D.1H.3C. := Clubs >= 6 AND Cpts >= 3 ;
+
+## 3D: Good 6+ diamond suit
+$.1C.1D.1H.3D. := Diamonds >= 6 AND Dpts >= 3 ;
+
+
+## ============================================================
+## 1C – 1D – 1S: RESPONDER'S REBIDS
+## 1N temporizing; 3m good 6-card suit; 3H good 6-card hearts;
+## 2N = splinter limit raise
+## ============================================================
+
+## 1N: Temporizing
+$.1C.1D.1S.1N. := Points <= 7 ;
+
+## 2S: Simple raise
+$.1C.1D.1S.2S. := Points <= 7 AND Spades >= 3 ;
+
+## 2N: Splinter limit raise (singleton/void in some suit, 4+ spades)
+$.1C.1D.1S.2N. := Points <= 7 AND Spades >= 4 AND
+                  (Hearts <= 1 OR Diamonds <= 1 OR Clubs <= 1) ;
+
+## 3H: Good 6+ heart suit (per "1C-1D-1S-3H" in system notes)
+$.1C.1D.1S.3H. := Hearts >= 6 AND Hpts >= 3 ;
+
+## 3C: Good 6+ club suit
+$.1C.1D.1S.3C. := Clubs >= 6 AND Cpts >= 3 ;
+
+## 3D: Good 6+ diamond suit
+$.1C.1D.1S.3D. := Diamonds >= 6 AND Dpts >= 3 ;
+
+
+## ============================================================
+## 1C – 1D – 1N: RESPONDER'S REBIDS (after balanced 17-19 rebid)
+## ============================================================
+
+## Pass: No interest in game
+$.1C.1D.1N.P. := Points <= 5 ;
+
+## 2C: Stayman (4+ major)
+$.1C.1D.1N.2C. := Points >= 4 AND (Hearts >= 4 OR Spades >= 4) ;
+
+## 2D: Transfer to hearts
+$.1C.1D.1N.2D. := Hearts >= 5 ;
+
+## 2H: Transfer to spades
+$.1C.1D.1N.2H. := Spades >= 5 ;
+
+## 3N: Signoff (balanced, no major)
+$.1C.1D.1N.3N. := (4 TO 6 Points) AND $noMajor4 ;
+
+
+## ============================================================
+## 1D RESPONSES
+## ============================================================
+
+## 1H: 4+ hearts, 5+ HCP
+$.1D.1H. := Points >= 5 AND Hearts >= 4 ;
+
+## 1S: 4+ spades, no 4-card hearts, 5+ HCP
+$.1D.1S. := Points >= 5 AND Spades >= 4 AND Hearts < 4 ;
+
+## 1N: Balanced/semi-balanced, 6-9 HCP, no 4-card major
+$.1D.1N. := (6 TO 9 Points) AND $balanced AND Hearts < 4 AND Spades < 4 ;
+
+## 2C: 10+ HCP, 5+ clubs (also 4M + 5C shape possible)
+$.1D.2C. := Points >= 10 AND Clubs >= 5 AND Hearts < 5 AND Spades < 5 ;
+
+## 2D: Simple raise, 4+ diamonds, 6-9 HCP
+$.1D.2D. := (6 TO 9 Points) AND Diamonds >= 4 ;
+
+## 3D: Preemptive raise, 5+ diamonds, 0-7 HCP
+$.1D.3D. := Points <= 7 AND Diamonds >= 5 ;
+
+## 2N: Invitational, balanced, 10-11 HCP, no 4-card major
+$.1D.2N. := $inv AND $balanced AND $noMajor4 ;
+
+## 3N: Game raise, balanced, 12-14 HCP, no 4-card major
+$.1D.3N. := (12 TO 14 Points) AND $balanced AND $noMajor4 ;
+
+
+## ============================================================
+## 1D – 1H: OPENER'S REBIDS
+## ============================================================
+
+## 1S: 4+ spades (rebid showing spade suit or reverse)
+$.1D.1H.1S. := Spades >= 4 ;
+
+## 1N: Minimum, balanced, 11-13 HCP
+$.1D.1H.1N. := (11 TO 13 Points) AND $balanced ;
+
+## 2D: 5+ diamonds (4-card suit ok if minimum rebid), minimum
+$.1D.1H.2D. := Diamonds >= 5 AND Points <= 13 ;
+
+## 2H: 3-card heart raise, minimum (11-13 HCP)
+$.1D.1H.2H. := Hearts >= 3 AND Points <= 13 ;
+
+## 3H: 4-card raise, extra values (14-15 HCP)
+$.1D.1H.3H. := Hearts >= 4 AND (14 TO 15 Points) ;
+
+## 2S: Reverse (5+ diamonds, 4+ spades, extra values 14-15)
+$.1D.1H.2S. := Spades >= 4 AND Diamonds >= 5 AND (14 TO 15 Points) ;
+
+## 2N: Balanced, 14-15 HCP
+$.1D.1H.2N. := (14 TO 15 Points) AND $balanced ;
+
+## 3D: Good 6+ diamond suit, minimum
+$.1D.1H.3D. := Diamonds >= 6 AND Points <= 13 ;
+
+
+## ============================================================
+## 1D – 1S: OPENER'S REBIDS
+## ============================================================
+
+## 1N: Minimum balanced, 11-13 HCP
+$.1D.1S.1N. := (11 TO 13 Points) AND $balanced ;
+
+## 2D: 5+ diamonds, minimum
+$.1D.1S.2D. := Diamonds >= 5 AND Points <= 13 ;
+
+## 2S: 3-card spade raise, minimum (11-13 HCP)
+$.1D.1S.2S. := Spades >= 3 AND Points <= 13 ;
+
+## 3S: 4-card raise, extra values (14-15 HCP)
+$.1D.1S.3S. := Spades >= 4 AND (14 TO 15 Points) ;
+
+## 2H: Reverse (5+ diamonds, 4+ hearts, extra values)
+$.1D.1S.2H. := Hearts >= 4 AND Diamonds >= 5 AND (14 TO 15 Points) ;
+
+## 2N: Balanced, 14-15 HCP
+$.1D.1S.2N. := (14 TO 15 Points) AND $balanced ;
+
+## 3D: Good 6+ diamond suit, minimum
+$.1D.1S.3D. := Diamonds >= 6 AND Points <= 13 ;
+
+
+## ============================================================
+## XYZ AFTER 1D – 1H – 1S
+## Responder uses 2C as puppet (any hand), 2D as GF relay
+## ============================================================
+
+## 2C: XYZ puppet to 2D (any strength responder hand)
+$.1D.1H.1S.2C. := Points >= 5 ;
+
+## Opener always bids 2D (forced by puppet)
+$.1D.1H.1S.2C.2D. := Points >= 0 ;
+
+## 2D: XYZ game force
+$.1D.1H.1S.2D. := $gf ;
+
+## 2N: Natural invitational, balanced
+$.1D.1H.1S.2N. := $inv AND $balanced ;
+
+## After puppet 2C-2D, responder now shows hand:
+## Pass = minimum, was looking to sign off
+$.1D.1H.1S.2C.2D.P. := (5 TO 7 Points) ;
+
+## 2H = heart suit, invitational (shows own suit)
+$.1D.1H.1S.2C.2D.2H. := Hearts >= 5 AND $inv ;
+
+## 2S = spade tolerance invite
+$.1D.1H.1S.2C.2D.2S. := Spades >= 3 AND $inv ;
+
+## 2N = invitational without clear suit
+$.1D.1H.1S.2C.2D.2N. := $inv AND $balanced ;
+
+
+## ============================================================
+## XYZ AFTER 1D – 1H – 1N
+## ============================================================
+
+$.1D.1H.1N.2C. := Points >= 5 ;
+$.1D.1H.1N.2C.2D. := Points >= 0 ;
+$.1D.1H.1N.2D. := $gf ;
+$.1D.1H.1N.2N. := $inv AND $balanced ;
+
+$.1D.1H.1N.2C.2D.P. := (5 TO 7 Points) ;
+$.1D.1H.1N.2C.2D.2H. := Hearts >= 5 AND $inv ;
+$.1D.1H.1N.2C.2D.2S. := Spades >= 4 AND $inv ;
+$.1D.1H.1N.2C.2D.2N. := $inv AND $balanced ;
+
+
+## ============================================================
+## XYZ AFTER 1D – 1S – 1N
+## ============================================================
+
+$.1D.1S.1N.2C. := Points >= 5 ;
+$.1D.1S.1N.2C.2D. := Points >= 0 ;
+$.1D.1S.1N.2D. := $gf ;
+$.1D.1S.1N.2N. := $inv AND $balanced ;
+
+$.1D.1S.1N.2C.2D.P. := (5 TO 7 Points) ;
+$.1D.1S.1N.2C.2D.2S. := Spades >= 5 AND $inv ;
+$.1D.1S.1N.2C.2D.2H. := Hearts >= 4 AND $inv ;
+$.1D.1S.1N.2C.2D.2N. := $inv AND $balanced ;
+
+
+## ============================================================
+## 1D – 1M – 2M: GAME TRIES (same structure as after 1M – 2M)
+## ============================================================
+
+## After 1D – 1H – 2H: game tries (responder bids)
+## Short-suit try (unspecified)
+$.1D.1H.2H.2S. := $inv AND Hearts >= 4 ;
+## Long-suit try: spades
+$.1D.1H.2H.2N. := $inv AND Hearts >= 4 AND Spades >= 4 ;
+## Long-suit try: clubs
+$.1D.1H.2H.3C. := $inv AND Hearts >= 4 AND Clubs >= 4 ;
+## Long-suit try: diamonds
+$.1D.1H.2H.3D. := $inv AND Hearts >= 4 AND Diamonds >= 4 ;
+## Accept game try
+$.1D.1H.2H.4H. := (12 TO 14 Points) AND Hearts >= 4 ;
+
+## After 1D – 1S – 2S: game tries (responder bids)
+$.1D.1S.2S.2N. := $inv AND Spades >= 4 ;
+$.1D.1S.2S.3C. := $inv AND Spades >= 4 AND Clubs >= 4 ;
+$.1D.1S.2S.3D. := $inv AND Spades >= 4 AND Diamonds >= 4 ;
+$.1D.1S.2S.3H. := $inv AND Spades >= 4 AND Hearts >= 4 ;
+$.1D.1S.2S.4S. := (12 TO 14 Points) AND Spades >= 4 ;
+
+
+## ============================================================
+## 1H OPENING: RESPONSES
+## ============================================================
+
+## 1S: 4+ spades, 5+ HCP (forcing one round)
+$.1H.1S. := Points >= 5 AND Spades >= 4 ;
+
+## 1N: Semi-forcing: (a) 5-11 HCP with <=2 hearts and no 4-card spades;
+##     (b) exactly 3 hearts at 7 HCP (constructive, will rebid 2H);
+##     (c) exactly 3 hearts at 10-12 HCP (limit raise path, will rebid 3H)
+$.1H.1N. := Spades < 4 AND
+            (((5 TO 11 Points) AND Hearts <= 2) OR
+             (Hearts ?= 3 AND (Points ?= 7 OR (10 TO 12 Points)))) ;
+
+## 2C: Game forcing, 5+ clubs
+$.1H.2C. := $gf AND Clubs >= 5 ;
+
+## 2D: Game forcing, 5+ diamonds
+$.1H.2D. := $gf AND Diamonds >= 5 ;
+
+## 2H: Simple raise, 3+ hearts, 8-10 HCP
+$.1H.2H. := (8 TO 10 Points) AND Hearts >= 3 ;
+
+## 3H: Preemptive raise, 4+ hearts, 0-7 HCP (UPH)
+$.1H.3H. := Points <= 7 AND Hearts >= 4 ;
+
+## 4H: Game raise (to play), 4+ hearts, 10-11 HCP (max for simple raise, want game directly)
+$.1H.4H. := (10 TO 11 Points) AND Hearts >= 4 ;
+
+## 2S: Game forcing, 5+ spades (self-sufficient suit)
+$.1H.2S. := $gf AND Spades >= 5 ;
+
+## 3N: Game (balanced, 12-14 HCP, stoppers)
+$.1H.3N. := (12 TO 14 Points) AND $balanced AND Spades >= 3 ;
+
+
+## ============================================================
+## 1H – 1S: OPENER'S REBIDS (includes XYZ applies here)
+## ============================================================
+
+## 1N: Minimum balanced (11-13 HCP) – XYZ now applies for responder
+$.1H.1S.1N. := (11 TO 13 Points) AND $balanced ;
+
+## 2H: Rebid hearts, 6+ hearts, minimum
+$.1H.1S.2H. := Hearts >= 6 AND Points <= 13 ;
+
+## 2S: 3-card spade raise, minimum
+$.1H.1S.2S. := Spades >= 3 AND Points <= 13 AND Hearts >= 5 ;
+
+## 3S: 4-card spade raise, extra values
+$.1H.1S.3S. := Spades >= 4 AND (14 TO 15 Points) ;
+
+## 2D: New suit, 4+ diamonds, minimum (could be reverse shape)
+$.1H.1S.2D. := Diamonds >= 4 AND Points <= 13 AND Hearts >= 5 ;
+
+## 2C: New suit, 4+ clubs (5-4 distribution), minimum
+$.1H.1S.2C. := Clubs >= 4 AND Points <= 13 AND Hearts >= 5 AND Diamonds < 4 ;
+
+## 2N: Balanced, 14-15 HCP
+$.1H.1S.2N. := (14 TO 15 Points) AND $balanced ;
+
+## 3H: 6+ hearts, extra values
+$.1H.1S.3H. := Hearts >= 6 AND (14 TO 15 Points) ;
+
+
+## ============================================================
+## XYZ AFTER 1H – 1S – 1N
+## ============================================================
+
+$.1H.1S.1N.2C. := Points >= 5 ;
+$.1H.1S.1N.2C.2D. := Points >= 0 ;
+$.1H.1S.1N.2D. := $gf ;
+$.1H.1S.1N.2N. := $inv AND $balanced ;
+
+$.1H.1S.1N.2C.2D.P. := (5 TO 7 Points) ;
+$.1H.1S.1N.2C.2D.2H. := Hearts >= 3 AND $inv ;
+$.1H.1S.1N.2C.2D.2S. := Spades >= 5 AND $inv ;
+$.1H.1S.1N.2C.2D.2N. := $inv AND $balanced ;
+
+
+## ============================================================
+## 1H – 2H: GAME TRIES
+## Per system: 2S = unspecified short-suit try; 2N = long-suit try in spades
+## ============================================================
+
+## 2S: Unspecified short-suit game try (opener with 11-14 HCP needs info)
+$.1H.2H.2S. := (11 TO 14 Points) AND Hearts >= 5 ;
+
+## 2N: Long-suit try in spades (opener has 4-card spade side suit)
+$.1H.2H.2N. := (11 TO 14 Points) AND Hearts >= 5 AND Spades >= 4 ;
+
+## 3C: Long-suit try in clubs
+$.1H.2H.3C. := (11 TO 14 Points) AND Hearts >= 5 AND Clubs >= 4 ;
+
+## 3D: Long-suit try in diamonds
+$.1H.2H.3D. := (11 TO 14 Points) AND Hearts >= 5 AND Diamonds >= 4 ;
+
+## Opener jumps to game (strong opening with good fit)
+$.1H.2H.4H. := (13 TO 15 Points) AND Hearts >= 5 ;
+
+## Responder rebids after opener's short-suit try 2S (responder has 8-10 from the 2H raise):
+$.1H.2H.2S.3H. := (8 TO 9 Points) AND Hearts >= 3 ;
+$.1H.2H.2S.4H. := Points ?= 10 AND Hearts >= 3 ;
+
+
+## ============================================================
+## 1H – 2C / 2D: OPENER'S REBIDS (game-forcing sequences)
+## When 1N = 14-16: next step = any minimum; 2N = suit + extras
+## ============================================================
+
+## After 1H – 2C: 2D = any minimum; 2N = 4-card D + extras; 3H = min 6-card H
+$.1H.2C.2D. := Points <= 13 ;
+$.1H.2C.2N. := Diamonds >= 4 AND (14 TO 15 Points) ;
+$.1H.2C.2H. := Hearts >= 6 AND Points <= 13 ;
+$.1H.2C.3H. := Hearts >= 6 AND (14 TO 15 Points) ;
+$.1H.2C.3N. := Hearts >= 6 AND Clubs <= 1 AND Points >= 14 ;
+
+## After 1H – 2D: 2H = any minimum; 2N = 4-card S + extras; 3H = extra values
+$.1H.2D.2H. := Points <= 13 ;
+$.1H.2D.2N. := Spades >= 4 AND (14 TO 15 Points) ;
+$.1H.2D.3H. := Hearts >= 6 AND (14 TO 15 Points) ;
+$.1H.2D.3N. := Hearts >= 6 AND Diamonds <= 1 AND Points >= 14 ;
+
+
+## ============================================================
+## 1H – 1N: OPENER'S REBIDS
+## ============================================================
+
+## 2H: Minimum, 6+ hearts
+$.1H.1N.2H. := Hearts >= 6 AND Points <= 13 ;
+
+## 2C: 4+ clubs (5-4 distribution), minimum
+$.1H.1N.2C. := Clubs >= 4 AND Points <= 13 AND Hearts >= 5 ;
+
+## 2D: 4+ diamonds (5-4 distribution), minimum
+$.1H.1N.2D. := Diamonds >= 4 AND Points <= 13 AND Hearts >= 5 AND Clubs < 4 ;
+
+## 2S: Reverse (5+ hearts, 4+ spades, extras)
+$.1H.1N.2S. := Spades >= 4 AND Hearts >= 5 AND (14 TO 15 Points) ;
+
+## 3H: 6+ hearts, extra values (invitation to game)
+$.1H.1N.3H. := Hearts >= 6 AND (14 TO 15 Points) ;
+
+## 2N: Balanced, 14-15 HCP
+$.1H.1N.2N. := (14 TO 15 Points) AND $balanced ;
+
+
+## ============================================================
+## 1H – 1N: 3-CARD SUPPORT CONTINUATIONS
+## Responder holds exactly 3 hearts via correction-C paths.
+## After any opener rebid, responder can now reveal the fit.
+## ============================================================
+
+## After 1H-1N-2H (opener rebids 6+ hearts): limit raise
+$.1H.1N.2H.3H. := Hearts ?= 3 AND (10 TO 12 Points) ;
+
+## After 1H-1N-2C (opener shows clubs): constructive or limit heart raise
+$.1H.1N.2C.2H. := Hearts ?= 3 AND Points ?= 7 ;
+$.1H.1N.2C.3H. := Hearts ?= 3 AND (10 TO 12 Points) ;
+
+## After 1H-1N-2D (opener shows diamonds): constructive or limit heart raise
+$.1H.1N.2D.2H. := Hearts ?= 3 AND Points ?= 7 ;
+$.1H.1N.2D.3H. := Hearts ?= 3 AND (10 TO 12 Points) ;
+
+## After 1H-1N-2N (opener extra balanced): limit raise only
+$.1H.1N.2N.3H. := Hearts ?= 3 AND (10 TO 12 Points) ;
+
+## After 1H-1N-3H (opener extra hearts): accept game
+$.1H.1N.3H.4H. := Hearts ?= 3 AND (10 TO 12 Points) ;
+
+
+## ============================================================
+## 1S OPENING: RESPONSES
+## ============================================================
+
+## 1N: Semi-forcing: (a) 5-11 HCP with <=2 spades;
+##     (b) exactly 3 spades at 7 HCP (constructive, will rebid 2S);
+##     (c) exactly 3 spades at 10-12 HCP (limit raise path, will rebid 3S)
+$.1S.1N. := (Spades <= 2 AND (5 TO 11 Points)) OR
+            (Spades ?= 3 AND (Points ?= 7 OR (10 TO 12 Points))) ;
+
+## 2C: Game forcing, 5+ clubs
+$.1S.2C. := $gf AND Clubs >= 5 ;
+
+## 2D: Game forcing, 5+ diamonds
+$.1S.2D. := $gf AND Diamonds >= 5 ;
+
+## 2H: Game forcing, 5+ hearts
+$.1S.2H. := $gf AND Hearts >= 5 ;
+
+## 2S: Simple raise, 3+ spades, 8-10 HCP
+$.1S.2S. := (8 TO 10 Points) AND Spades >= 3 ;
+
+## 3S: Preemptive raise, 4+ spades, 0-7 HCP (UPH)
+$.1S.3S. := Points <= 7 AND Spades >= 4 ;
+
+## 4S: Game raise, 4+ spades, 10-11 HCP (to play directly)
+$.1S.4S. := (10 TO 11 Points) AND Spades >= 4 ;
+
+## 3N: Game, balanced, 12-14 HCP
+$.1S.3N. := (12 TO 14 Points) AND $balanced AND Hearts >= 3 ;
+
+
+## ============================================================
+## 1S – 2S: GAME TRIES
+## Per system: 2N = unspecified short-suit try; 3m/3H = long-suit tries
+## ============================================================
+
+## 2N: Unspecified short-suit game try (opener with 11-14 HCP needs info)
+$.1S.2S.2N. := (11 TO 14 Points) AND Spades >= 5 ;
+
+## 3C: Long-suit try in clubs
+$.1S.2S.3C. := (11 TO 14 Points) AND Spades >= 5 AND Clubs >= 4 ;
+
+## 3D: Long-suit try in diamonds
+$.1S.2S.3D. := (11 TO 14 Points) AND Spades >= 5 AND Diamonds >= 4 ;
+
+## 3H: Long-suit try in hearts
+$.1S.2S.3H. := (11 TO 14 Points) AND Spades >= 5 AND Hearts >= 4 ;
+
+## Opener jumps to game (strong opening with good fit)
+$.1S.2S.4S. := (13 TO 15 Points) AND Spades >= 5 ;
+
+## Responder rebids after opener's short-suit try 2N (responder has 8-10 from the 2S raise):
+$.1S.2S.2N.3S. := (8 TO 9 Points) AND Spades >= 3 ;
+$.1S.2S.2N.4S. := Points ?= 10 AND Spades >= 3 ;
+
+
+## ============================================================
+## 1S – 2C / 2D / 2H: OPENER'S REBIDS
+## When 1N = 14-16: next step = any minimum; 2N = specific suit + extras
+## 3N = max 6.3.3.1 with shortness in responder's minor
+## 3S = semi-solid 6+ spades with extras
+## ============================================================
+
+## After 1S – 2C: 2D = any minimum; 2H = 4-card H + extras; 2N = extras no H
+$.1S.2C.2D. := Points <= 13 ;
+$.1S.2C.2H. := Hearts >= 4 AND (14 TO 15 Points) ;
+$.1S.2C.2N. := (14 TO 15 Points) AND Hearts < 4 ;
+$.1S.2C.3S. := Spades >= 6 AND Spts >= 4 AND (14 TO 15 Points) ;
+$.1S.2C.3N. := Spades >= 6 AND Clubs <= 1 AND Points >= 14 ;
+
+## After 1S – 2D: 2H = any minimum; 2N = 4-card H + extras
+$.1S.2D.2H. := Points <= 13 ;
+$.1S.2D.2N. := Hearts >= 4 AND (14 TO 15 Points) ;
+$.1S.2D.3S. := Spades >= 6 AND Spts >= 4 AND (14 TO 15 Points) ;
+$.1S.2D.3N. := Spades >= 6 AND Diamonds <= 1 AND Points >= 14 ;
+
+## After 1S – 2H: 2S = any minimum (next step); 2N = extras
+$.1S.2H.2S. := Points <= 13 ;
+$.1S.2H.2N. := (14 TO 15 Points) AND Hearts < 4 ;
+$.1S.2H.3H. := Hearts >= 4 AND (14 TO 15 Points) ;
+$.1S.2H.3S. := Spades >= 6 AND Spts >= 4 AND (14 TO 15 Points) ;
+
+
+## ============================================================
+## 1S – 1N: OPENER'S REBIDS
+## ============================================================
+
+## 2S: Minimum, 6+ spades, sign off
+$.1S.1N.2S. := Spades >= 6 AND Points <= 13 ;
+
+## 2C: 5-4 distribution (spades + clubs), minimum
+$.1S.1N.2C. := Clubs >= 4 AND Points <= 13 AND Spades >= 5 ;
+
+## 2D: 5-4 distribution (spades + diamonds), minimum
+$.1S.1N.2D. := Diamonds >= 4 AND Points <= 13 AND Spades >= 5 AND Clubs < 4 ;
+
+## 2H: Reverse (5+ spades, 4+ hearts, extra values)
+$.1S.1N.2H. := Hearts >= 4 AND Spades >= 5 AND (14 TO 15 Points) ;
+
+## 3S: 6+ spades, extra values
+$.1S.1N.3S. := Spades >= 6 AND (14 TO 15 Points) ;
+
+## 2N: Balanced, 14-15 HCP
+$.1S.1N.2N. := (14 TO 15 Points) AND $balanced ;
+
+
+## ============================================================
+## 1S – 1N: 3-CARD SUPPORT CONTINUATIONS
+## ============================================================
+
+## After 1S-1N-2S (opener rebids 6+ spades): limit raise
+$.1S.1N.2S.3S. := Spades ?= 3 AND (10 TO 12 Points) ;
+
+## After 1S-1N-2C (opener shows clubs): constructive or limit spade raise
+$.1S.1N.2C.2S. := Spades ?= 3 AND Points ?= 7 ;
+$.1S.1N.2C.3S. := Spades ?= 3 AND (10 TO 12 Points) ;
+
+## After 1S-1N-2D (opener shows diamonds): constructive or limit spade raise
+$.1S.1N.2D.2S. := Spades ?= 3 AND Points ?= 7 ;
+$.1S.1N.2D.3S. := Spades ?= 3 AND (10 TO 12 Points) ;
+
+## After 1S-1N-2H (reverse, extra values): limit raise only
+$.1S.1N.2H.3S. := Spades ?= 3 AND (10 TO 12 Points) ;
+
+## After 1S-1N-2N (extra balanced): limit raise only
+$.1S.1N.2N.3S. := Spades ?= 3 AND (10 TO 12 Points) ;
+
+## After 1S-1N-3S (opener extra spades): accept game
+$.1S.1N.3S.4S. := Spades ?= 3 AND (10 TO 12 Points) ;
+
+
+## ============================================================
+## 1N RESPONSES
+## ============================================================
+
+## Pass: Very weak balanced hand, no long suit
+$.1N.P. := Points <= 7 AND $balanced ;
+
+## 2C: Stayman – 4+ major OR invitational minor one-suiter (8+ HCP)
+$.1N.2C. := Points >= 8 AND ((Hearts >= 4 OR Spades >= 4) OR
+            ((Clubs >= 5 OR Diamonds >= 5) AND $inv)) ;
+
+## 2D: Jacoby transfer to hearts (5+ hearts)
+$.1N.2D. := Hearts >= 5 ;
+
+## 2H: Jacoby transfer to spades (5+ spades)
+$.1N.2H. := Spades >= 5 ;
+
+## 2S: Range ask (balanced 8-9 no major) OR 5+ clubs non-invitational
+$rangeAsk := $balNoMajor AND (8 TO 9 Points) ;
+## Long club hand: weak (<=9) or strong (>=14), excluding invitational range (10-11 which uses 2C)
+$clubsOnly := Clubs >= 5 AND Hearts < 5 AND Spades < 5 AND NOT $inv ;
+$.1N.2S. := $rangeAsk OR $clubsOnly ;
+
+## 2N: Both minors 5-5+ (weak intending to pass, or GF+)
+$.1N.2N. := Clubs >= 5 AND Diamonds >= 5 ;
+
+## 3C: Transfer to diamonds (5+ diamonds, no 5-card major)
+$.1N.3C. := Diamonds >= 5 AND Hearts < 5 AND Spades < 5 ;
+
+## 3D: Both majors (Smolen variant), 5-4 or better
+$.1N.3D. := (Hearts >= 5 OR Spades >= 5) AND Hearts >= 4 AND Spades >= 4 ;
+
+## 3H: Short hearts (void or singleton), 4-card spades or 4+ minor, slam interest
+##     Other major (spades) cannot exceed 4 cards (correction D)
+$.1N.3H. := Points >= 10 AND Hearts <= 1 AND Spades <= 4 AND
+            (Spades ?= 4 OR Diamonds >= 4 OR Clubs >= 4) ;
+
+## 3S: Short spades (void or singleton), 4-card hearts or 4+ minor, slam interest
+##     Other major (hearts) cannot exceed 4 cards (correction D)
+$.1N.3S. := Points >= 10 AND Spades <= 1 AND Hearts <= 4 AND
+            (Hearts ?= 4 OR Diamonds >= 4 OR Clubs >= 4) ;
+
+## 3N: Signoff, balanced no 4-card major, 10-14 HCP
+$.1N.3N. := $balNoMajor AND (10 TO 14 Points) ;
+
+## 4D: Texas transfer to hearts (6+ hearts, 9-11 HCP)
+$.1N.4D. := Hearts >= 6 AND (9 TO 11 Points) ;
+
+## 4H: Texas transfer to spades (6+ spades, 9-11 HCP)
+$.1N.4H. := Spades >= 6 AND (9 TO 11 Points) ;
+
+## 4N: Quantitative slam invite (balanced no major, 15-16 HCP)
+$.1N.4N. := $balNoMajor AND (15 TO 16 Points) ;
+
+
+## ============================================================
+## AFTER 1N – 2C (STAYMAN): OPENER'S REBIDS
+## ============================================================
+
+## 2D: No 4-card major
+$.1N.2C.2D. := Hearts < 4 AND Spades < 4 ;
+
+## 2H: 4+ hearts (with both majors, bid hearts first)
+$.1N.2C.2H. := Hearts >= 4 ;
+
+## 2S: 4+ spades, no 4-card hearts
+$.1N.2C.2S. := Spades >= 4 AND Hearts < 4 ;
+
+
+## ============================================================
+## AFTER 1N – 2C – 2H: RESPONDER'S REBIDS
+## 2S = natural one-round force, 4-card spades, inv+
+## ============================================================
+
+## 2S: 4+ spades, invitational or better (one-round force)
+$.1N.2C.2H.2S. := Spades >= 4 AND Points >= 9 ;
+
+## 3H: Invitational heart raise
+$.1N.2C.2H.3H. := Hearts >= 4 AND (8 TO 9 Points) ;
+
+## 4H: Game raise in hearts
+$.1N.2C.2H.4H. := Hearts >= 4 AND Points >= 10 ;
+
+## 3N: Signoff (no major fit)
+$.1N.2C.2H.3N. := Hearts < 4 AND Spades < 4 AND (10 TO 14 Points) ;
+
+
+## ============================================================
+## AFTER 1N – 2C – 2S: RESPONDER'S REBIDS
+## ============================================================
+
+## 3S: Invitational spade raise
+$.1N.2C.2S.3S. := Spades >= 4 AND (8 TO 9 Points) ;
+
+## 4S: Game raise in spades
+$.1N.2C.2S.4S. := Spades >= 4 AND Points >= 10 ;
+
+## 3N: Signoff (no spade fit)
+$.1N.2C.2S.3N. := Spades < 4 AND (10 TO 14 Points) ;
+
+## 3H: 5-card heart suit, GF (Smolen after 2S response)
+$.1N.2C.2S.3H. := Hearts >= 5 AND Spades >= 4 AND Points >= 10 ;
+
+
+## ============================================================
+## AFTER 1N – 2C – 2D (no major): RESPONDER'S REBIDS
+## ============================================================
+
+## 2N: Invitational, no major
+$.1N.2C.2D.2N. := $noMajor4 AND (8 TO 9 Points) ;
+
+## 3N: Signoff
+$.1N.2C.2D.3N. := $noMajor4 AND (10 TO 14 Points) ;
+
+## 3H: 5+ hearts, GF (Smolen: 5H, 4S)
+$.1N.2C.2D.3H. := Hearts >= 5 AND Spades >= 4 AND Points >= 10 ;
+
+## 3S: 5+ spades, GF (Smolen: 5S, 4H)
+$.1N.2C.2D.3S. := Spades >= 5 AND Hearts >= 4 AND Points >= 10 ;
+
+
+## ============================================================
+## AFTER 1N – 2D (JACOBY TO H): OPENER ACCEPTS
+## With super-accept (4-card support, good hand), opener may bid
+## help suit or 2N (game try below hearts), or jump to 3H (balanced GF try)
+## ============================================================
+
+## 2H: Accept transfer (normal acceptance, any 14-16)
+$.1N.2D.2H. := Points >= 14 ;
+
+
+## ============================================================
+## AFTER 1N – 2D – 2H: RESPONDER'S REBIDS
+## ============================================================
+
+## Pass: Weak, 5-card heart suit only
+$.1N.2D.2H.P. := Hearts ?= 5 AND Points <= 7 ;
+
+## 2N: Invitational (semi-balanced, 5-card hearts)
+$.1N.2D.2H.2N. := (8 TO 9 Points) AND Spades < 4 AND (shape [5,3,3,2] OR shape [5,4,2,2]) ;
+
+## 3N: Game, semi-balanced (5-card hearts, no 4-card spade fit)
+$.1N.2D.2H.3N. := (10 TO 13 Points) AND Spades < 4 AND shape [5,3,3,2] ;
+
+## 3H: Invitational with 6-card heart suit
+$.1N.2D.2H.3H. := Hearts >= 6 AND (8 TO 9 Points) ;
+
+## 4H: Game with 6-card hearts or strong invite
+$.1N.2D.2H.4H. := (Hearts >= 6 AND (10 TO 13 Points)) OR (Hearts >= 5 AND Points >= 12) ;
+
+## New suits: Game forcing (Jacoby + new minor = GF)
+$.1N.2D.2H.3C. := Clubs >= 4 AND Points >= 10 ;
+$.1N.2D.2H.3D. := Diamonds >= 4 AND Points >= 10 ;
+
+
+## ============================================================
+## AFTER 1N – 2H (JACOBY TO S): OPENER ACCEPTS
+## ============================================================
+
+$.1N.2H.2S. := Points >= 14 ;
+
+
+## ============================================================
+## AFTER 1N – 2H – 2S: RESPONDER'S REBIDS
+## ============================================================
+
+## Pass: Weak, 5-card spade suit only
+$.1N.2H.2S.P. := Spades ?= 5 AND Points <= 7 ;
+
+## 2N: Invitational (semi-balanced, 5-card spades)
+$.1N.2H.2S.2N. := (8 TO 9 Points) AND Hearts < 4 AND (shape [5,3,3,2] OR shape [5,4,2,2]) ;
+
+## 3N: Game, semi-balanced (5-card spades, no 4-card heart fit)
+$.1N.2H.2S.3N. := (10 TO 13 Points) AND Hearts < 4 AND shape [5,3,3,2] ;
+
+## 3S: Invitational with 6-card spade suit
+$.1N.2H.2S.3S. := Spades >= 6 AND (8 TO 9 Points) ;
+
+## 4S: Game with 6-card spades or strong invite
+$.1N.2H.2S.4S. := (Spades >= 6 AND (10 TO 13 Points)) OR (Spades >= 5 AND Points >= 12) ;
+
+## New suits: Game forcing (Jacoby + new minor = GF)
+$.1N.2H.2S.3C. := Clubs >= 4 AND Points >= 10 ;
+$.1N.2H.2S.3D. := Diamonds >= 4 AND Points >= 10 ;
+
+
+## ============================================================
+## AFTER 1N – 2S (RANGE ASK / CLUBS): OPENER'S REBIDS
+## ============================================================
+
+## 2N: Minimum (14-15 HCP)
+$.1N.2S.2N. := 14 TO 15 Points ;
+
+## 3C: Maximum (16 HCP)
+$.1N.2S.3C. := Points ?= 16 ;
+
+
+## ============================================================
+## AFTER 1N – 2S – 2N: RESPONDER CONTINUES
+## ============================================================
+
+## 3C: Weak clubs (pass or correct – responder will pass 3C)
+$.1N.2S.2N.3C. := Clubs >= 5 AND Points <= 7 ;
+
+## Opener passes 3C (completes pass-or-correct)
+$.1N.2S.2N.3C.P. := Points >= 0 ;
+
+## 3H: 4-card hearts (now shows the major after range ask)
+$.1N.2S.2N.3H. := Hearts >= 4 ;
+
+## 3S: 4-card spades
+$.1N.2S.2N.3S. := Spades >= 4 ;
+
+## P: Signoff (was range ask, opener showed minimum, not enough for game)
+$.1N.2S.2N.P. := $balNoMajor AND (8 TO 9 Points) ;
+
+
+## ============================================================
+## AFTER 1N – 2S – 3C (MAX): RESPONDER CONTINUES
+## ============================================================
+
+## 3H: 4-card hearts
+$.1N.2S.3C.3H. := Hearts >= 4 ;
+
+## 3S: 4-card spades
+$.1N.2S.3C.3S. := Spades >= 4 ;
+
+## 3N: Signoff (no major found, balanced)
+$.1N.2S.3C.3N. := $balNoMajor AND Points >= 8 ;
+
+## Pass: Weak clubs (minimum game values with clubs)
+$.1N.2S.3C.P. := Clubs >= 5 AND Points <= 7 ;
+
+
+## ============================================================
+## AFTER 1N – 2N (MINORS): OPENER'S REBIDS
+## Opener bids better minor; 3C with equal length
+## ============================================================
+
+## 3C: Better clubs or equal length (default)
+$.1N.2N.3C. := NOT (Diamonds >= 5 AND Clubs <= 3) ;
+
+## 3D: Better diamonds (diamonds clearly longer)
+$.1N.2N.3D. := Diamonds >= 5 AND Clubs <= 3 ;
+
+
+## ============================================================
+## AFTER 1N – 2N – 3C / 3D: RESPONDER CONTINUES (GF)
+## ============================================================
+
+## After opener bids 3C, responder can pass (was weak), or bid GF:
+$.1N.2N.3C.P. := Diamonds < 5 AND Points <= 6 ;
+$.1N.2N.3C.3D. := Points >= 10 AND Diamonds >= 5 ;
+$.1N.2N.3C.3N. := Points >= 10 AND Clubs >= 5 AND Hearts < 4 AND Spades < 4 ;
+
+## After opener bids 3D, responder GF:
+$.1N.2N.3D.P. := Clubs < 5 AND Points <= 6 ;
+$.1N.2N.3D.3N. := Points >= 10 AND Diamonds >= 5 AND Hearts < 4 AND Spades < 4 ;
+
+
+## ============================================================
+## AFTER 1N – 3C (TRANSFER TO D): OPENER ACCEPTS
+## ============================================================
+
+$.1N.3C.3D. := Points >= 14 ;
+
+
+## ============================================================
+## AFTER 1N – 3C – 3D: RESPONDER CONTINUES
+## ============================================================
+
+## 3H: 4+ hearts (now shows major for combined decision)
+$.1N.3C.3D.3H. := Hearts >= 4 ;
+
+## 3S: 4+ spades
+$.1N.3C.3D.3S. := Spades >= 4 ;
+
+## Pass: Weak diamonds (was weak, just wanted to play 3D)
+$.1N.3C.3D.P. := Diamonds >= 5 AND Points <= 7 ;
+
+## 3N: Game (no 4-card major, enough values)
+$.1N.3C.3D.3N. := $noMajor4 AND Points >= 10 ;
+
+
+## ============================================================
+## 2N OPENING RESPONSES
+## ============================================================
+
+## Pass: No game interest
+$.2N.P. := Points <= 3 AND $balanced ;
+
+## 3C: Puppet Stayman (4+ major, game interest)
+$.2N.3C. := Points >= 4 AND (Hearts >= 4 OR Spades >= 4) ;
+
+## 3D: Transfer to hearts (5+ hearts)
+$.2N.3D. := Hearts >= 5 ;
+
+## 3H: Transfer to spades (5+ spades)
+$.2N.3H. := Spades >= 5 ;
+
+## 3S: Minor relay (5+ in a minor)
+$.2N.3S. := (Clubs >= 5 OR Diamonds >= 5) AND Hearts < 5 AND Spades < 5 ;
+
+## 3N: Signoff (balanced, no major, 4-7 HCP)
+$.2N.3N. := (4 TO 7 Points) AND $noMajor4 ;
+
+## 4N: Quantitative slam invite
+$.2N.4N. := (6 TO 8 Points) AND $balNoMajor ;
+
+
+## ============================================================
+## AFTER 2N – 3C (PUPPET STAYMAN): OPENER'S REBIDS
+## ============================================================
+
+## 3D: No 4-card major
+$.2N.3C.3D. := Hearts < 4 AND Spades < 4 ;
+
+## 3H: 4+ hearts (with both majors, bid hearts first)
+$.2N.3C.3H. := Hearts >= 4 ;
+
+## 3S: 4+ spades, no 4-card hearts
+$.2N.3C.3S. := Spades >= 4 AND Hearts < 4 ;
+
+
+## ============================================================
+## AFTER 2N – 3D (TRANSFER TO H): OPENER ACCEPTS
+## ============================================================
+
+$.2N.3D.3H. := Points >= 20 ;
+
+
+## ============================================================
+## AFTER 2N – 3H (TRANSFER TO S): OPENER ACCEPTS
+## ============================================================
+
+$.2N.3H.3S. := Points >= 20 ;
+
+
+## ============================================================
+## 2C OPENING: RESPONSES
+## Transfer structure: 3C = transfer to D; 3D = transfer to H; 3H = transfer to S
+## ============================================================
+
+## 2D: Waiting / relay (any hand without a long suit to show)
+$.2C.2D. := Points >= 0 ;
+
+## 2H: Natural, 5+ hearts, constructive (6+ HCP)
+$.2C.2H. := Hearts >= 5 AND Points >= 6 ;
+
+## 2S: Natural, 5+ spades, constructive (6+ HCP)
+$.2C.2S. := Spades >= 5 AND Points >= 6 ;
+
+## 2N: Fit for clubs (Qxx or better), 8+ HCP
+$.2C.2N. := Clubs >= 3 AND Cpts >= 2 AND Points >= 8 ;
+
+## 3C: Transfer to diamonds (5+ diamonds)
+$.2C.3C. := Diamonds >= 5 AND Hearts < 5 AND Spades < 5 ;
+
+## 3D: Transfer to hearts (5+ hearts, GF)
+$.2C.3D. := Hearts >= 5 AND $gf ;
+
+## 3H: Transfer to spades (5+ spades, GF)
+$.2C.3H. := Spades >= 5 AND $gf ;
+
+
+## ============================================================
+## AFTER 2C – 2D (WAITING): OPENER'S REBIDS
+## ============================================================
+
+## 2H: 4-card hearts (5-4 shape: 5+C, 4H)
+$.2C.2D.2H. := Hearts >= 4 ;
+
+## 2S: 4-card spades, no 4-card hearts (5+C, 4S)
+$.2C.2D.2S. := Spades >= 4 AND Hearts < 4 ;
+
+## 2N: Maximum (no 4-card major, 6+ clubs, good hand)
+$.2C.2D.2N. := (14 TO 15 Points) AND Clubs >= 6 AND Hearts < 4 AND Spades < 4 ;
+
+## 3C: Minimum (no 4-card major)
+$.2C.2D.3C. := Points <= 13 AND Hearts < 4 AND Spades < 4 ;
+
+
+## ============================================================
+## AFTER 2C – 3D (TRANSFER TO H): OPENER'S REBIDS
+## "opener accepts with tolerance, bids 3N or 4C with no fit"
+## ============================================================
+
+## 3H: Accept transfer (3+ hearts, tolerance)
+$.2C.3D.3H. := Hearts >= 3 ;
+
+## 3N: No heart fit (1-2 hearts), exploring
+$.2C.3D.3N. := Hearts <= 2 AND Points >= 12 ;
+
+## 4C: Very good clubs, no heart fit
+$.2C.3D.4C. := Hearts <= 2 AND Clubs >= 6 ;
+
+
+## ============================================================
+## AFTER 2C – 3H (TRANSFER TO S): OPENER'S REBIDS
+## ============================================================
+
+## 3S: Accept transfer (3+ spades, tolerance)
+$.2C.3H.3S. := Spades >= 3 ;
+
+## 3N: No spade fit, exploring
+$.2C.3H.3N. := Spades <= 2 AND Points >= 12 ;
+
+## 4C: Very good clubs, no spade fit
+$.2C.3H.4C. := Spades <= 2 AND Clubs >= 6 ;
+
+
+## ============================================================
+## 2D OPENING (3-SUITER SHORT IN DIAMONDS): RESPONSES
+## Opener has 4+S, 4+H, 4+C, at most 1 diamond, 11-15 HCP
+## ============================================================
+
+## 2H: Sign-off, 6+ hearts (weak)
+$.2D.2H. := Hearts >= 6 AND Points <= 7 ;
+
+## 2S: Sign-off, 6+ spades (weak)
+$.2D.2S. := Spades >= 6 AND Points <= 7 ;
+
+## 2N: Asking bid (8+ HCP, asks opener for emphasis/longest suit)
+$.2D.2N. := Points >= 8 ;
+
+## 3C: Sign-off, 6+ clubs (weak)
+$.2D.3C. := Clubs >= 6 AND Points <= 7 ;
+
+## 3H: Invitational in hearts (5+ hearts, 8-9 HCP)
+$.2D.3H. := Hearts >= 5 AND (8 TO 9 Points) ;
+
+## 3S: Invitational in spades (5+ spades, 8-9 HCP)
+$.2D.3S. := Spades >= 5 AND (8 TO 9 Points) ;
+
+## 3N: To play (stoppers in diamonds, 8-12 HCP, no 5-card major)
+$.2D.3N. := (8 TO 12 Points) AND Diamonds >= 2 AND Hearts < 5 AND Spades < 5 ;
+
+## 4H: Game in hearts (5+ hearts, 10+ HCP)
+$.2D.4H. := Hearts >= 5 AND Points >= 10 ;
+
+## 4S: Game in spades (5+ spades, 10+ HCP)
+$.2D.4S. := Spades >= 5 AND Points >= 10 ;
+
+
+## ============================================================
+## AFTER 2D – 2N (ASKING): OPENER'S REBIDS
+## Opener clarifies longest/strongest of the three suits
+## ============================================================
+
+## 3C: Clubs longest or equal with hearts/spades
+$.2D.2N.3C. := Clubs >= 5 AND Hearts < 5 AND Spades < 5 ;
+
+## 3H: Hearts longest
+$.2D.2N.3H. := Hearts >= 5 AND Clubs < 5 ;
+
+## 3S: Spades longest
+$.2D.2N.3S. := Spades >= 5 AND Hearts < 5 AND Clubs < 5 ;
+
+## 3N: Even distribution across the three suits, maximum
+$.2D.2N.3N. := Points >= 14 AND Clubs < 5 AND Hearts < 5 AND Spades < 5 ;
+
+
+## ============================================================
+## 2H OPENING: RESPONSES
+## New major forcing, new minor to play
+## 2N = relay asking bid
+## ============================================================
+
+## Pass: No interest
+$.2H.P. := Points <= 5 AND Hearts < 2 ;
+
+## 2N: Relay (asking bid, 13+ HCP for game interest)
+$.2H.2N. := Points >= 13 ;
+
+## 2S: New major, natural, forcing one round (5+ spades)
+$.2H.2S. := Spades >= 5 AND Points >= 10 ;
+
+## 3C: New minor, to play (6+ clubs, weak)
+$.2H.3C. := Clubs >= 6 AND Points <= 9 ;
+
+## 3D: New minor, to play (6+ diamonds, weak)
+$.2H.3D. := Diamonds >= 6 AND Points <= 9 ;
+
+## 4H: Game raise (3+ hearts, 8-12 HCP)
+$.2H.4H. := Hearts >= 3 AND (8 TO 12 Points) ;
+
+## 3H: Constructive raise (3+ hearts, 9-11 HCP – limit raise)
+$.2H.3H. := Hearts >= 3 AND (9 TO 11 Points) ;
+
+
+## ============================================================
+## AFTER 2H – 2N (RELAY): OPENER'S REBIDS
+## Non-vul: bid second suit, or 3H/3S/3N for min/med/max
+## Vul: bid feature with non-min, else rebid hearts
+## ============================================================
+
+## 3H: Minimum, no second suit (solid rebid)
+$.2H.2N.3H. := Points <= 7 AND Hearts >= 6 AND Spades < 4 AND Clubs < 4 AND Diamonds < 4 ;
+
+## 3C: Second suit in clubs
+$.2H.2N.3C. := Clubs >= 4 AND Points >= 6 AND Hearts >= 5 ;
+
+## 3D: Second suit in diamonds
+$.2H.2N.3D. := Diamonds >= 4 AND Points >= 6 AND Clubs < 4 ;
+
+## 3S: Medium, spade feature/second suit
+$.2H.2N.3S. := Spades >= 4 AND (8 TO 9 Points) ;
+
+## 3N: Maximum (10 HCP in a weak two context)
+$.2H.2N.3N. := Points >= 10 ;
+
+
+## ============================================================
+## 2S OPENING: RESPONSES
+## New major forcing, new minor to play
+## 2N = relay asking bid
+## ============================================================
+
+## Pass: No interest
+$.2S.P. := Points <= 5 AND Spades < 2 ;
+
+## 2N: Relay (asking bid, 13+ HCP)
+$.2S.2N. := Points >= 13 ;
+
+## 3C: New minor, to play (6+ clubs, weak)
+$.2S.3C. := Clubs >= 6 AND Points <= 9 ;
+
+## 3D: New minor, to play (6+ diamonds, weak)
+$.2S.3D. := Diamonds >= 6 AND Points <= 9 ;
+
+## 3H: New major, natural, forcing (5+ hearts)
+$.2S.3H. := Hearts >= 5 AND Points >= 10 ;
+
+## 4S: Game raise (3+ spades, 8-12 HCP)
+$.2S.4S. := Spades >= 3 AND (8 TO 12 Points) ;
+
+## 3S: Constructive raise (3+ spades, 9-11 HCP)
+$.2S.3S. := Spades >= 3 AND (9 TO 11 Points) ;
+
+
+## ============================================================
+## AFTER 2S – 2N (RELAY): OPENER'S REBIDS
+## ============================================================
+
+## 3S: Minimum, no second suit
+$.2S.2N.3S. := Points <= 7 AND Spades >= 6 AND Hearts < 4 AND Clubs < 4 AND Diamonds < 4 ;
+
+## 3C: Second suit in clubs
+$.2S.2N.3C. := Clubs >= 4 AND Points >= 6 AND Spades >= 5 ;
+
+## 3D: Second suit in diamonds
+$.2S.2N.3D. := Diamonds >= 4 AND Points >= 6 AND Clubs < 4 ;
+
+## 3H: Second suit in hearts
+$.2S.2N.3H. := Hearts >= 4 AND Points >= 6 AND Spades >= 5 ;
+
+## 3N: Maximum
+$.2S.2N.3N. := Points >= 10 ;
+
+END

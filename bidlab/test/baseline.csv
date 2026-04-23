@@ -1,0 +1,4 @@
+Hand,Vul,N Pts,N Ctls,N KC S,N KC H,N KC D,N KC C,N S,N H,N D,N C,N pattern,N shape,S Pts,S Ctls,S KC S,S KC H,S KC D,S KC C,S S,S H,S D,S C,S pattern,S shape,Par Bid,Par Score,Bidding testinput.txt,Contract testinput.txt,Score testinput.txt,
+63.J97.AKQ3.AQJ7 - 94.T854.7.KT8432 -,N,17,5,2,2,3,2,2,3,4,4,2-3-4-4,4.4.3.2,3,1,0,0,0,1,2,4,1,6,2-4-1-6,6.4.2.1,2C - S,90,1N-2S-3C-3H-P-AP,3H - S,-157,
+Q53.K5.K965.AQJT - AJ9.983.J73.K965 -,N,15,4,1,2,2,1,3,2,4,4,3-2-4-4,4.4.3.2,9,3,1,1,1,2,3,3,3,4,3-3-3-4,4.3.3.3,1C - S,100,1N-2S-2N-P-AP,2N - N,20,
+QJ75.AJ9.K3.AJ73 - 832.KQ8762.T7.96 -,N,16,5,2,2,3,2,4,3,2,4,4-3-2-4,4.4.3.2,5,1,0,1,0,0,3,6,2,2,3-6-2-2,6.3.2.2,1H - N,115,1N-2D-2H-P-AP,2H - N,103,

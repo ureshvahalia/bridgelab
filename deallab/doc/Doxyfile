@@ -1,0 +1,58 @@
+# Doxyfile for Dealer
+# Run from the doc/ directory: doxygen Doxyfile
+# Output goes to doc/html/
+
+DOXYFILE_ENCODING      = UTF-8
+PROJECT_NAME           = "Dealer"
+PROJECT_BRIEF          = "Bridge hand generator and double/single-dummy analysis tool"
+PROJECT_NUMBER         =
+OUTPUT_DIRECTORY       = .
+
+#---------------------------------------------------------------------------
+# Source input
+#---------------------------------------------------------------------------
+INPUT                  = ../src \
+                         ../../shared
+FILE_PATTERNS          = *.c *.cc *.cpp *.h *.hpp *.hh
+RECURSIVE              = NO
+EXCLUDE                =
+EXCLUDE_PATTERNS       =
+
+#---------------------------------------------------------------------------
+# Extraction settings
+#---------------------------------------------------------------------------
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+
+#---------------------------------------------------------------------------
+# Build / parse settings
+#---------------------------------------------------------------------------
+OPTIMIZE_OUTPUT_FOR_C  = NO
+JAVADOC_AUTOBRIEF      = NO
+QT_AUTOBRIEF           = NO
+BUILTIN_STL_SUPPORT    = YES
+
+#---------------------------------------------------------------------------
+# Output formats
+#---------------------------------------------------------------------------
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_FILE_EXTENSION    = .html
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+GENERATE_LATEX         = NO
+GENERATE_RTF           = NO
+GENERATE_MAN           = NO
+GENERATE_XML           = NO
+GENERATE_DOCBOOK       = NO
+
+#---------------------------------------------------------------------------
+# Graphs (requires Graphviz dot)
+#---------------------------------------------------------------------------
+HAVE_DOT               = YES
+CALL_GRAPH             = YES
+CALLER_GRAPH           = YES
+GENERATE_LEGEND        = YES
+DOT_MULTI_TARGETS      = YES

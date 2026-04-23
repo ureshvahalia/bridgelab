@@ -1,0 +1,12 @@
+$Any := (Points >= 0);
+$ntop := (shape [4,3,3,3] OR [4,4,3,2] OR [5,3,3,2]);
+$.1n. := (15 TO 17 Points) AND ($ntop);
+$.2n. := (20 TO 22 Points) AND ($ntop);
+$notBalanced :=  NOT ($ntop);
+$.1s. := (12 TO 20 Points) AND (Spades > 4) AND NOT $.1n.;
+$.1h. := (12 TO 20 Points) AND (Hearts > 4) AND NOT $.1n.;
+$.1D. := (12 TO 20 Points) AND ((Diamonds > 3) OR pattern [4-4-3-2]) AND NOT $.1n.;
+$.1C. := (12 TO 20 Points) AND NOT ($.1n. OR $.1s. OR $.1h. OR $.1D.);
+$.P. := (Points < 12);
+$.2C. := (Points > 20) AND NOT $.2n.;
+end
