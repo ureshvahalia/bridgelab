@@ -1,0 +1,135 @@
+Camel transcription memory notes
+================================
+
+Purpose
+-------
+
+These are my saved working notes for the Camel-to-`hand-spec` transcription.
+They are meant as future reference for continued work on `camel_spec.txt`.
+
+Files used
+----------
+
+- `shared/hand-spec.md`
+- `/home/rvg/git/bridge/bidding/camel/latex/camel.tex`
+- included Camel LaTeX chapters, especially:
+  - `openings.tex`
+  - `overview.tex`
+  - `1C.tex`
+  - `1D.tex`
+  - `1major.tex`
+  - `1N.tex`
+  - `2minor.tex`
+  - `2major.tex`
+  - `2N.tex`
+  - `3N.tex`
+- `/home/rvg/Insync/rvg@creato.org/Dropbox/camel/camel.pdf`
+
+Important extracted constants and assumptions
+---------------------------------------------
+
+- `1NT` opening in Camel is `11-14`, balanced/semi-balanced, denies a 4-card
+  major and shortness.
+
+- `1H` has a special balanced exception:
+  balanced `18-20` with `4/5` hearts and no 4 spades.
+  This came from `common.tex`:
+  - `\onehbalmin = 18`
+  - `\onehbalmax = 20`
+
+- `1D` is:
+  - balanced `15-23` without a 4-card major, or
+  - unbalanced `14+` without a 4-card major.
+
+- `1C` is the most artificial/system-defining opening:
+  usually `11+` with a `4/5`-card major and no `6+` major,
+  plus rare exceptional no-major hands.
+
+- `2C` and `2D` are limited major-showing openings:
+  - `2C` implies hearts
+  - `2D` implies spades
+  - both are `10-13` and shapely
+
+- `2H` and `2S` are not weak twos in Camel.
+  They are balanced/semi-balanced `11-14` with exactly 5 cards in the opened
+  major and deny 4 cards in the other major.
+
+- `2N` is a good 7-card-major hand with strong playing-trick content.
+  The source defines it by playing tricks rather than HCP, so this had to be
+  approximated in DSL.
+
+- `3N` is a forcing opening with a self-sufficient suit and roughly 9+ playing
+  tricks. This also had to be approximated.
+
+Implementation notes
+--------------------
+
+- Forward references are not allowed in the DSL.
+  I initially hit this problem because some "catch-all" sequence rules were
+  written as negations of later-defined sequence rules.
+  I removed those forward references by replacing them with coarse residual
+  hand descriptions.
+
+- The resulting `camel_spec.txt` is intentionally a first-pass uncontested
+  system file, not a complete transcription of all relay and competitive logic.
+
+- The file includes:
+  - opening bids,
+  - major early response families,
+  - major early rebid families,
+  - summary-level relay entry points for `1N`, `2m`, `2M`, `2N`, `3N`.
+
+- The file does not attempt to encode every competitive chapter, nor all deep
+  K.K.-relay continuations.
+
+Validation notes
+----------------
+
+- `camel_spec.txt` was validated successfully with:
+  `dealer/bin/linux/Debug/myprogram -i camel_spec.txt 1 Any`
+
+- The bidder binary no longer failed immediately on rules-file loading after
+  the forward-reference fix.
+
+Things most worth improving next
+--------------------------------
+
+1. `1C`:
+   deep responder rebids, opener rebids, and no-major branches.
+
+2. `1D`:
+   the `1D-1H` and `1D-1S` relay structures.
+
+3. `1M`:
+   the GF relay tree after `1M-1N` and the detailed followups after the
+   default response and fit-showing responses.
+
+4. `2m` and `2M`:
+   singleton asks, relay continuations, and picture-bid continuations.
+
+5. Competitive methods:
+   probably better split into a separate dedicated transcription pass.
+
+Interpretation guidelines used
+------------------------------
+
+- When the source gave exact shape and control conditions, I encoded them.
+
+- When the source used terms like:
+  - "game in hand"
+  - "playing tricks"
+  - "good suit"
+  - "self-sufficient suit"
+  - "did not feel like responding 1N"
+  I used conservative HCP/shape/honor approximations instead.
+
+- When the source explicitly said "currently undefined", "TBD", or presented
+  a clearly judgement-based continuation, I left the deep branch out rather
+  than pretending it was precise.
+
+Related files in this repo
+--------------------------
+
+- `camel_spec.txt`
+- `camel_branch_gaps.txt`
+- `camel_memory_notes.txt`

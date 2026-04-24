@@ -1,0 +1,246 @@
+Camel branches needing better definition
+=======================================
+
+This file lists places where `camel_spec.txt` is intentionally approximate,
+or where the Camel source itself is relay-heavy, judgement-based, or explicitly
+undefined/TBD. The goal is to make the gaps visible so they can be tightened in
+later passes.
+
+1. Opening-bid boundaries
+-------------------------
+
+- `1C` rare no-major exception with "game in hand with a long minor"
+  Source: `1C.tex` introduction.
+  Current status: not modeled directly. `camel_spec.txt` only includes the
+  clearly stated `24+` balanced no-major exception.
+
+- `2N` opening strength definition
+  Source: `2N.tex`.
+  Current status: approximated from "good 7-card major" plus honor quality.
+  The actual source uses "strength equivalent to the higher end of a 2m
+  opening" and playing-trick language, which the DSL cannot represent exactly.
+
+- `3N` self-sufficient suit standard
+  Source: `3N.tex`.
+  Current status: approximated using long-suit honor quality. The source is
+  based on "9+ playing tricks" and "self-sufficient suit", which is only
+  loosely approximated in the DSL.
+
+- Aggressive pass/open style for weak hands
+  Source: `overview.tex`.
+  Current status: reduced to rule-based openings plus catch-all pass. The
+  prose style about when to shade openings is not fully encoded.
+
+2. 1C response structure
+------------------------
+
+- `1C-1S` catch-all response
+  Source: `1C.tex`.
+  Current status: very approximate. In the notes this bid contains:
+  - most weak no-major hands,
+  - balanced GF hands with fewer than 3 controls,
+  - some balanced 13-15 GF hands with no 5-card minor,
+  - some highly distributional GF hands.
+  The current rule uses a coarse strength/control approximation.
+
+- `1C-2C` mixed invitational/GF hand class
+  Source: `1C.tex`.
+  Current status: partially modeled. The source mixes invitational unbalanced
+  hands with specific GF `(13)=(54)` shapes. This likely needs more exact shape
+  and strength partitioning.
+
+- `1C-2D`, `1C-2H`, `1C-2S`, `1C-2N`, `1C-3C`, `1C-3D/H/S/N`
+  Source: `1C.tex`.
+  Current status: encoded from the summary descriptions only. These are really
+  entry points into relay systems and control-showing structures; the current
+  rules only classify the starting hand, not the full continuation logic.
+
+3. 1C opener rebids after major-showing response
+------------------------------------------------
+
+- `1C-1D-*` and `1C-1H-*` rebid families
+  Source: `1C.tex`, especially sections 4.2 through 4.6 in the PDF.
+  Current status: only early rebids are encoded, and several are simplified.
+  In particular:
+  - ordinary raises versus strong balanced raises,
+  - splinter rebids,
+  - no-immediate-fit continuations,
+  - ultra-strong rebid structures,
+  are not modeled in depth.
+
+- `1C-1D-2D` (5=3=(14) type hands)
+  Source: PDF section 4.4.3.
+  Current status: only very roughly approximated.
+
+- Deep followups after `1C-1S`, `1C-1N`, `1C-2C`, `1C-2H`
+  Source: PDF sections 4.6 onward.
+  Current status: not transcribed beyond the entry bid.
+
+4. 1D response and continuation structure
+-----------------------------------------
+
+- `1D-1S` K.K.-relay entry
+  Source: `1D.tex`.
+  Current status: opener-side relay tree is not transcribed. Only the initial
+  hand class is represented.
+
+- `1D-1N` major two-suiter range split
+  Source: `1D.tex`.
+  Current status: coarse approximation of the "7-9 with 5-5 majors" and
+  stronger 5-4/5-5 major hands. The exact judgement line is not encoded.
+
+- `1D-2H` / `1D-2S` split-range minor single-suiters
+  Source: `1D.tex`.
+  Current status: only the entry bid is encoded. The weak-vs-GF split and the
+  splinter/relay continuations after opener's reply are not.
+
+- `1D-2N`, `1D-3C/D/H/S`, `1D-4C/D`
+  Source: `1D.tex`.
+  Current status: summary-only encoding. The real continuations are much more
+  structured than the current first-pass file.
+
+- `1D-1H` rebid tree after `1S`, `1N`, `2C`, `2D`, `2H`, `2S`, `2N`, `3m`
+  Source: `1D.tex` sections 6.2 onward.
+  Current status: only opener's first rebid is encoded. The rest of the branch
+  is largely unmodeled.
+
+5. 1M response structure
+------------------------
+
+- Default response `1H-1S` / `1S-2C`
+  Source: `1major.tex`.
+  Current status: necessarily approximate. In the notes this is a "last
+  resort" bucket containing weak, medium, and some GF hands after multiple
+  inferences. The current rule is a coarse residual hand type.
+
+- Artificial third-cheapest and fourth-cheapest responses
+  Source: `1major.tex`.
+  Current status: only the headline meanings are encoded. The picture-bid,
+  fit-showing, and later clarification structure is not.
+
+- Splinter ladder and mixed-raise ladders
+  Source: `1major.tex`.
+  Current status: partially encoded at the entry-bid level only. Later relay
+  asks and disclosures are not present.
+
+- `1M-1N` GF relay continuations
+  Source: `1ma_relay.tex`.
+  Current status: not transcribed beyond the forcing relay itself.
+
+- Opener rebids after default route and after fit-showing responses
+  Source: `1major.tex`, `1ma_relay.tex`, `1M_x_2M.tex`.
+  Current status: only a few common opener rebids are present. The real system
+  has far more structure than is currently encoded.
+
+6. 1NT structure
+----------------
+
+- `1N-2C` GF relay and downstream control-showing
+  Source: `1N.tex`.
+  Current status: the main shape-showing trunk is encoded, but only in a
+  summary way. The source contains explicit relay philosophy and followup
+  meanings that are only partially represented.
+
+- `1N-2C-3C` special treatment
+  Source: `1N.tex`.
+  Current status: responder continuations after the `3C` answer are not
+  transcribed.
+
+- `1N-2D` invitational relay branch
+  Source: `1N.tex`.
+  Current status: opener's answers are encoded, but the detailed downstream
+  followups are not.
+
+- Competitive `1N` methods
+  Source: `1N.tex`.
+  Current status: not represented in `camel_spec.txt`.
+
+7. 2m opening followups
+-----------------------
+
+- Most `2C/2D` non-relay responses
+  Source: `2minor.tex`.
+  Current status: entry bids are encoded, but many of the implied continuations
+  such as transfer acceptance, fit-showing alternatives, singleton asks, and
+  picture bids are not.
+
+- Relay branch after `2m` cheapest response
+  Source: `2minor.tex`.
+  Current status: only opener's first answer set is represented. The later
+  singleton-ask and trump-setting continuations are not fully encoded.
+
+- Signoff-versus-GF distinctions after transfers and raises
+  Source: `2minor.tex`.
+  Current status: only partially encoded.
+
+8. 2M opening followups
+-----------------------
+
+- `2M-2N` weak-minors / GF dual-use branch
+  Source: `2major.tex`.
+  Current status: only the coarse branching is encoded. The full relay-for-shape
+  and control-showing structure after `3C/3D` is not.
+
+- Passed-hand modifications after `2M`
+  Source: `2major.tex`.
+  Current status: not separately modeled; current rules reflect only the main
+  unpassed-hand structure.
+
+9. 2NT opening followups
+------------------------
+
+- `2N-3C` transfer/GF branch
+  Source: `2N.tex`.
+  Current status: only the immediate major-showing answers are present.
+  Later strength-disclosure and competition agreements are not.
+
+- `2N-3D` invitational branch
+  Source: `2N.tex`.
+  Current status: only summary-level continuations encoded.
+
+10. 3NT opening followups
+-------------------------
+
+- Pavlicek-derived ace/strength structures after `3N-4C` and `3N-4D`
+  Source: `3N.tex`.
+  Current status: only headline branches are encoded. The later step asks,
+  ace-location continuations, and strength asks are not fully represented.
+
+11. Competitive methods
+-----------------------
+
+- All competitive chapters are outside the current transcription scope
+  Source: `1C_competitive.tex`, `competitive_general.tex`, `defensive.tex`,
+  `1D_competitive.tex`, and relevant competitive sections in other chapters.
+  Current status: essentially omitted from `camel_spec.txt`.
+
+12. Source-defined TBD / explicitly unfinished areas
+----------------------------------------------------
+
+- Competitive sections in the Camel PDF marked `TODO`
+  Source: PDF chapter 5.9 onward and scattered "currently undefined" notes.
+  Current status: omitted.
+
+- `1D` and `1M` branches explicitly described as "currently undefined"
+  Source: `1D.tex`, `1major.tex`, and related relay sections.
+  Current status: omitted or approximated at entry level only.
+
+- Picture-bid continuations where the source says "TBD"
+  Source: especially `1major.tex` and `2minor.tex`.
+  Current status: omitted.
+
+Recommended next-pass priorities
+================================
+
+1. Deepen the `1C` tree first.
+   This is the most system-defining Camel branch and currently the most
+   compressed relative to the source.
+
+2. Then deepen `1D`, especially `1D-1H` and `1D-1S`.
+   These branches carry a lot of structured strength/shape disclosure.
+
+3. Then deepen `1M` and `2m` relay continuations.
+   The current file captures their surface meanings but not the relay detail.
+
+4. Leave most competitive material for a separate file or separate pass.
+   It is large, orthogonal, and the source itself is not fully stabilized.
