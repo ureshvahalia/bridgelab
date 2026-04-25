@@ -84,15 +84,15 @@ OBJS = \
 DEPS = $(OBJS:.o=.d)
 
 # ── Compiler flags ────────────────────────────────────────────────────────────
-COMMON_FLAGS  = -fopenmp -flto=auto -Wno-free-nonheap-object
+COMMON_FLAGS  = -fopenmp -Wno-free-nonheap-object
 BASE_INCLUDES = -I$(SRC_DIR) -I. -I$(SHARED_DIR) -I../lib $(PLAT_INCLUDES)
 
 ifeq ($(TARGET),Debug)
     CFLAGS  = -Wall -Wextra -g -DDEALER -DDEBUG2 $(BASE_INCLUDES) -fexceptions $(COMMON_FLAGS)
     LDFLAGS = -g $(PLAT_LDFLAGS) $(COMMON_FLAGS)
 else ifeq ($(TARGET),Release)
-    CFLAGS  = -Wall -Wextra -O2 -DDEALER $(BASE_INCLUDES) -fexceptions $(COMMON_FLAGS)
-    LDFLAGS = -O2 $(PLAT_LDFLAGS) $(COMMON_FLAGS)
+    CFLAGS  = -Wall -Wextra -O2 -flto=auto -DDEALER $(BASE_INCLUDES) -fexceptions $(COMMON_FLAGS)
+    LDFLAGS = -O2 -flto=auto $(PLAT_LDFLAGS) $(COMMON_FLAGS)
 endif
 
 # ── Build rules ───────────────────────────────────────────────────────────────

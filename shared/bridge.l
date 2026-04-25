@@ -10,7 +10,7 @@ char* makeDef (char*);
 extern FILE *lexin;
 /* # define input() (((yytchar=yysptr>yysbuf?U(*--yysptr):getc(lexin))==10?(yylineno++,yytchar):yytchar)==EOF?0:yytchar) */
 %}
-%option nounput
+%option nounput yylineno
 %%
 [ \t]	;
 "\r\n"	;

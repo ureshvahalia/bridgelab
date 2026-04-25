@@ -2,10 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug myprogram",
+            "name": "Debug deallab",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/bin/msys2/Debug/myprogram.exe",
+            "program": "${workspaceFolder}/bin/msys2/Debug/deallab.exe",
             "args": ["-d", "statwork", "-p", "2N3Nc", "-S", "-F", "2Nina.csv", "-E", "2048", "2048"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

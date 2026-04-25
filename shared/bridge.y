@@ -13,11 +13,13 @@ typedef char *CPTR;
 int base, uvar, ktype, karr, mac;
 TPTR parent, parent1, parent2, arr, avar, ndx, name, lastDef, root;
 int yylex ();
+extern int yylineno;
+extern char* yytext;
 
 void
 yyerror (char const* msg)
 {
-	fprintf (stderr, "%s\n", msg);
+	fprintf (stderr, "%s at line %d (near \"%s\")\n", msg, yylineno, yytext);
 }
 
 %}
@@ -28,13 +30,13 @@ yyerror (char const* msg)
 %token LEQ GEQ EQU NEQ OR AND END TO
 
 %right GETS
-%left '+' '-'
-%left '*' '/' '%'
-%left '<' '>' EQU NEQ GEQ LEQ
-%left '^'
 %left ';'
 %left OR
+%left '^'
 %left AND
+%left '<' '>' EQU NEQ GEQ LEQ
+%left '+' '-'
+%left '*' '/' '%'
 %left UMINUS
 %left UNOT
 %nonassoc TO
@@ -185,6 +187,12 @@ var	:   KEYVAR
 		    }
 		}
 	|   '[' NUMBER ',' NUMBER ',' NUMBER ',' NUMBER ']'
+		{
+		    $$ = make_leaf (TSHAPE, ((long long)($2) << 24) +
+					    ((long long)($4) << 16) +
+					    ((long long)($6) << 8) + (long long)($8));
+		}
+	|   '[' NUMBER '.' NUMBER '.' NUMBER '.' NUMBER ']'
 		{
 		    $$ = make_leaf (TSHAPE, ((long long)($2) << 24) +
 					    ((long long)($4) << 16) +

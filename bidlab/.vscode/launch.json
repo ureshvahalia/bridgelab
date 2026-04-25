@@ -5,12 +5,12 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Run bidder",
+            "name": "Run bidlab",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/winbin/Debug/bidder.exe",
+            "program": "${workspaceFolder}/bin/msys2/Debug/bidlab.exe",
             // "args": [ "-v", "details.csv", "-p", "StrongNT_pbn.csv" ],
-            "args": [ "-i", "test/testinput.txt", "-o", "results.csv","-nchecks", "32", "10", ".1N.", "NotPass" ],
+            "args": [ "-i", "input/UreshJayPrecision.txt", "-o", "output/results.csv","-nchecks", "32", "10", ".1N.", "posResp" ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

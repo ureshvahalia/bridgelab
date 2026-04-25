@@ -667,7 +667,7 @@ bool
 auction::createDeal (char* pbnStr)
 {
     bidderDeal deal (rules[0], rules[1], rules[2], rules[3], partnerRule);
-    printf(":");
+    printf("%s, %s:", (TPTR)rules[0] ? ((TPTR)rules[0])->t_desc : "No rule", (TPTR)rules[2] ? ((TPTR)rules[2])->t_desc : "No rule");
     if (pbnStr == NULL) {
         int i;
         for (i = 0; i < MAXTRIES; i++)  {
