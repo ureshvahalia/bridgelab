@@ -58,6 +58,65 @@ END
 A definition may reference any earlier definition by its `$Name`.  Forward
 references are not supported.
 
+### Redefinition
+
+`$Name` may be defined more than once with `:=`.  A later definition does
+not retroactively change anything that already referenced the name — a
+`$Name` reference always resolves to whichever definition of `$Name` was
+most recent *at that point in the file* (the same sequential, no-forward-
+reference rule that governs everything else), and is unaffected by any
+redefinition that happens later:
+
+```
+$Weak := (0 TO 7 Points);
+$X     := $Weak;              ## $X captures the first $Weak, permanently
+$Weak := (0 TO 10 Points);    ## warns: redefining $Weak
+$Y     := $Weak;              ## $Y captures the second $Weak
+```
+
+Redefining a name is usually a copy-paste accident rather than a deliberate
+choice, so it is not silent: it prints a `warning: redefining $Name` to
+stderr but still loads the file (exit 0).
+
+### Modifying a definition: `:&` and `:|`
+
+```
+$Name :& expression   ## AND expression onto $Name's current definition
+$Name :| expression   ## OR expression onto $Name's current definition
+```
+
+Unlike `:=`, both operators require `$Name` to already be defined — modifying
+a name that doesn't exist yet is a load-time error, the same as referencing
+an undefined `$Name`. Where `:=` replaces a definition outright, `:&`/`:|`
+extend the *current* one in place: `$Name :& expr` is equivalent to
+redefining `$Name` as `($Name's current body) AND (expr)` (and similarly
+`OR` for `:|`), without having to spell the current body out again. This is
+most useful for refining one case out of several that already share most of
+their logic — see the Maj/Min example below.
+
+Like a plain `:=` redefinition, `:&`/`:|` only affect `$Name` references made
+*after* that point in the file; anything that already referenced `$Name`
+keeps whatever `$Name` meant at the time. Unlike `:=`, `:&`/`:|` don't warn —
+requiring the name to already exist makes accidental collisions much less
+likely, and modifying an existing definition is the whole point of the
+operators.
+
+`:&` and `:|` can be applied to the same name repeatedly, and each wraps the
+*entire current definition* at the moment it runs, so — unlike a plain chain
+of `AND`/`OR` inside one expression — the order of the statements matters
+whenever `:&` and `:|` are mixed on the same name:
+
+```
+$Z := A;
+$Z :& B;   ## $Z is now (A AND B)
+$Z :| C;   ## $Z is now ((A AND B) OR C)
+```
+
+reads differently from the same three clauses applied in the other order,
+which would give `((A OR C) AND B)` instead. A run of the *same* operator is
+order-independent (`AND`/`OR` are each associative on their own), only
+mixing the two is order-sensitive.
+
 ---
 
 ## Expressions
@@ -211,7 +270,7 @@ From highest to lowest:
 | | `<`, `>`, `?=`, `!=`, `>=`, `<=` |
 | | `*`, `/`, `%` *(reserved, not yet active)* |
 | | `+`, `-` *(reserved, not yet active)* |
-| Lowest | `:=` (definition assignment) |
+| Lowest | `:=`, `:&`, `:|` (definition assignment / modification) |
 
 ---
 
@@ -327,3 +386,181 @@ The special name `$ANY` is a built-in wildcard that always evaluates to true;
 it is used in Dealer command lines and Bidder configuration to mean "no
 constraint on this seat".  Because the language is case-insensitive, `$any`,
 `$Any`, and `$ANY` in an input file all refer to the same rule.
+
+### Bid-Sequence Legality
+
+Every `$.`-prefixed name is checked when the rules file is loaded: each real
+call (anything other than `P`) must rank strictly higher than every earlier
+real call in that same sequence — bids must ascend, exactly as in a real
+auction (`C < D < H < S < NT` within a level, then level increases). A
+hand-typed name that violates this, such as `$.1S.1H.` (hearts below spades
+at the same level), is rejected at load time with an error identifying the
+rule. This check applies in both Bidder and Dealer, and also governs which
+generated variants survive Maj/Min macro expansion — see below.
+
+---
+
+## Suit-Pair Macros: Maj / Min / OMaj / OMin / BMaj / BMin
+
+These six keywords (plus their full spellings `Major`, `Minor`, `OMajor`,
+`OMinor`, `BothMajors`, `BothMinors` — all case-insensitive, exact aliases)
+let a single rule stand in for a pattern that's the same shape in either
+major or either minor suit, instead of writing it out twice by hand. They
+are resolved by a preprocessing pass (`shared/majMinExpand.cpp`) that runs
+**before** the rules file is parsed: by the time the parser sees the file,
+every macro has already been expanded into ordinary rules using only real
+suit names. This preprocessing is shared by both Dealer and Bidder — the
+`$.`-prefixed bid-token forking described below works identically in both,
+even though only Bidder does anything with an auction/convention tree
+afterward. Dealer just ends up with more ordinary named rules to reference
+from the command line.
+
+| Keyword | Full spelling | Meaning |
+|---------|---------------|---------|
+| `Maj`   | `Major`   | One major suit — which one is resolved per usage (see below) |
+| `OMaj`  | `OMajor`  | The *other* major — whichever suit `Maj` did **not** resolve to |
+| `Min`   | `Minor`   | One minor suit, same idea as `Maj` |
+| `OMin`  | `OMinor`  | The other minor |
+| `BMaj`  | `BothMajors` | Both major suits at once (body-only — see below) |
+| `BMin`  | `BothMinors` | Both minor suits at once (body-only — see below) |
+
+### `OMaj`/`OMin` require an established `Maj`/`Min`
+
+`OMaj` only means something relative to an already-chosen `Maj` — "the other
+one" needs a "the one" to be the other of. So within a single rule's own
+text (its name, then its body, read in that order), the **first** occurrence
+of the pair must be `Maj`/`Major`; any `OMaj`/`OMajor` appearing before that
+is rejected at load time. The same rule applies independently to `Min`/`Minor`
+vs. `OMin`/`OMinor`. `BMaj`/`BMin` are unrelated to this — they don't
+establish or consume a `Maj`/`Min` anchor at all.
+
+```
+$Y := (Omaj > 3);
+## rejected: OMAJ used before a preceding MAJ/MAJOR — nothing establishes
+## which suit is "the major" here
+```
+
+### Two different expansions, depending on where the macro appears
+
+**In a bid-token position** (Bidder-style `$.` sequence names), `Maj`/`Min`
+must resolve to one concrete, callable suit, so using one there **forks the
+rule into two concrete rules**, substituting consistently through that
+rule's whole name and body:
+
+```
+$.1N.2C.2Maj. := (Maj > 3) AND (OMaj < 4);
+```
+expands to:
+```
+$.1N.2C.2H. := (Hearts > 3) AND (Spades < 4);
+$.1N.2C.2S. := (Spades > 3) AND (Hearts < 4);
+```
+
+`:&` and `:|` fork the same way `:=` does — the expanded name is what
+matters, not which of the three operators produced it. This makes it
+possible to give one forked variant a follow-up refinement without touching
+the other: show a 4-card major over Stayman, but with both majors held,
+always rebid 2H rather than 2S:
+
+```
+$.1N.2C.2Maj. := (Maj > 3);
+$.1N.2C.2S.   :& (Hearts < 4);
+```
+expands to:
+```
+$.1N.2C.2H. := (Hearts > 3);
+$.1N.2C.2S. := (Spades > 3);
+$.1N.2C.2S. :& (Hearts < 4);
+```
+which the parser then resolves to `$.1N.2C.2S. := (Spades > 3) AND (Hearts <
+4)`, leaving `$.1N.2C.2H.` untouched — without having to duplicate `Hearts <
+4` by hand into a `$.1N.2C.2S. := (Hearts < 4) AND (Spades > 3);` definition.
+`$.1N.2C.2Maj. :& expr` (modifying, rather than defining, an already-forked
+name) works the same way, applying to both forks independently — a `:&`/`:|`
+statement's own name can use `Maj`/`Min`/`OMaj`/`OMin` exactly like a `:=`
+statement's can.
+
+If a rule's name doesn't use the macro but an **earlier** bid in that same
+name did, later body-only references still resolve against that established
+choice rather than forking again — the name is always spelled out in full,
+so the anchor is always visible in the rule's own text:
+
+```
+$.1Maj.     := (11 TO 21 Points) AND (Maj >= 5);
+$.1Maj.1N.  := (6 TO 9 Points) AND (Omaj < 3);
+```
+expands to:
+```
+$.1H.       := (11 TO 21 Points) AND (Hearts >= 5);
+$.1S.       := (11 TO 21 Points) AND (Spades >= 5);
+$.1H.1N.    := (6 TO 9 Points) AND (Spades < 3);
+$.1S.1N.    := (6 TO 9 Points) AND (Hearts < 3);
+```
+
+`BMaj`/`BMin` cannot appear in a bid-token position at all ("both majors"
+isn't a callable bid) — `$.1BMaj.` is rejected at load time.
+
+**In a rule body with no name anchor at all** (an ordinary hand-property
+rule, or a `$.` rule whose own name doesn't use the pair), there's no single
+suit to resolve to, so the *entire* body is duplicated once per suit and the
+copies are OR'd together — the whole enclosing rule body, never a smaller
+sub-expression, which is what correctly keeps a `Maj` and its matching
+`OMaj` elsewhere in the same body pointing at complementary suits instead of
+being resolved independently:
+
+```
+$X := (Maj ?= 5) AND (Omaj ?= 4);
+```
+expands to:
+```
+$X := ((Spades ?= 5) AND (Hearts ?= 4)) OR ((Hearts ?= 5) AND (Spades ?= 4));
+```
+
+If both a Major-pair and a Minor-pair usage are unanchored in the same body,
+all four combinations are generated and OR'd together.
+
+### Illegal generated sequences are pruned, not fatal
+
+When a name fork produces a `$.`-sequence that fails the ascending-rank
+legality check (e.g. `$.1Maj.1Omaj.` — one of its two substitutions is
+`$.1S.1H.`, illegal), that one variant is dropped with a warning and the
+other, legal variant is kept; the file still loads. This is different from
+a *hand-typed* illegal sequence with no macro involved, which is a hard,
+fatal error — see "Bid-Sequence Legality" above.
+
+### `BMaj`/`BMin`: both suits, body-only, always as their own parenthesized comparison
+
+`BMaj`/`BMin` mean "both suits of the pair, ANDed" — deterministic, no suit
+choice to anchor, so no ordering rule applies to them. But because the
+substitution has to know exactly which comparison it's replacing, every
+`BMaj`/`BMin` usage **must** be written as its own complete, parenthesized
+comparison — `(BMaj > 3)`, never `BMaj > 3` bare or folded into a larger
+parenthesized group. This is enforced at load time:
+
+```
+$W := BMaj > 3;
+## rejected: BMAJ must be written as its own parenthesized comparison,
+## e.g. "(BMAJ > 3)"
+
+$Z := (BMaj > 3);
+## expands to: $Z := ((Spades > 3) AND (Hearts > 3));
+```
+
+Avoid wrapping a `Maj`/`OMaj`/`BMaj`/`BMin` comparison directly in `NOT` if
+you want the "obvious" negated meaning. These macros expand mechanically
+(substitute, then combine with OR or AND as described above); the mechanical
+result of negating that expansion is not the same as negating the *original*
+existential ("some suit") or universal ("both suits") claim the macro
+represents. Concretely, `NOT (BMaj > 3)` expands to `(NOT(Spades>3)) AND
+(NOT(Hearts>3))` — "neither suit exceeds 3" — not the "at least one suit
+doesn't exceed 3" you'd get by properly negating "both exceed 3". If you
+need the negated reading, write it out with real suit names instead of
+negating the macro directly.
+
+### Debugging expansions
+
+Every expansion Bidder or Dealer performs is written back out, fully
+resolved, to `<rules-file>.expanded.txt` next to the original file — a
+normal, re-parseable rules file with every macro already gone. In Debug
+builds (`-DDEBUG2`), each expansion is also traced to stderr as it happens,
+e.g. `[majMinExpand] $.1N.2C.2Maj. -> $.1N.2C.2S., $.1N.2C.2H.,`.

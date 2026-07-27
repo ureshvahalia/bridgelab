@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Run bidlab",
+            "name": "Debug bidlab",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/msys2/Debug/bidlab.exe",

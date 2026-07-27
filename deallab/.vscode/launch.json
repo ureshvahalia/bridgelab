@@ -6,7 +6,8 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/msys2/Debug/deallab.exe",
-            "args": ["-d", "statwork", "-p", "2N3Nc", "-S", "-F", "2Nina.csv", "-E", "2048", "2048"],
+            "args": ["-d", "statwork", "8", "Any", "Any"],
+            // "args": ["-d", "statwork", "-p", "2N3Nc", "-S", "-F", "2Nina.csv", "-E", "2048", "2048"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [
@@ -17,10 +18,23 @@
             ],
             "externalConsole": false,
             "MIMode": "gdb",
+            "logging": {
+                "moduleLoad": false
+            },
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Disable thread messages",
+                    "text": "set print thread-events off",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Disable shared library messages",
+                    "text": "set print symbol-loading off",
                     "ignoreFailures": true
                 }
             ],

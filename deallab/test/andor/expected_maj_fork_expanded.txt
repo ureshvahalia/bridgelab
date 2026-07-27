@@ -1,0 +1,5 @@
+$Any := (Points >= 0);
+$.1N.2C.2S. := (Spades > 3);
+$.1N.2C.2H. := (Hearts > 3);
+$.1N.2C.2S. :& (Hearts < 4);
+END

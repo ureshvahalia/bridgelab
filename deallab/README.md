@@ -152,7 +152,7 @@ deallab/
 │   └── csvparser.cpp/.hpp# CSV tokenizer
 ├── doc/
 │   ├── Doxyfile          # Doxygen configuration
-│   └── design.md         # Detailed design document (TODO)
+│   └── design.md         # Detailed design document
 ├── test/                 # Regression test inputs and reference outputs
 ├── output/               # Generated output files
 ├── Makefile

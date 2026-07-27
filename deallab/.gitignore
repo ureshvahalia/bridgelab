@@ -37,6 +37,11 @@ test/test*BBO.lin
 test/DDA.csv
 test/SDA.csv
 test/_*.txt
+test/majmin/*.csv
+test/majmin/*.stderr
+test/majmin/conv*
+test/andor/*.stderr
+test/andor/conv*
 
 # Temporary / scratch files
 tmp/

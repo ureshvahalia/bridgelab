@@ -1,0 +1,6 @@
+$Any := (Points >= 0);
+## Name-anchored fork with BMaj (independent) and Omaj (anchored by name)
+$.1C.1Maj. := (BMaj > 3) AND (Omaj < 5);
+## Body-only existential OR (no name anchor)
+$X := (Maj ?= 5) AND (Omaj ?= 4);
+END

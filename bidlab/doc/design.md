@@ -78,7 +78,9 @@ main()
 | `pack.cpp/.hpp` | Card pack, Fisher-Yates shuffle, RNG (GSL Mersenne Twister) |
 | `fnscpp.cpp` | Hand evaluation: HCP, suit lengths, key-card counts, shape/pattern matching |
 | `fns_common.cpp` | C-linkage evaluation helpers shared with the parser |
-| `parse_rules.c/.h` | Load and query the parsed rule tree |
+| `parse_rules.c/.h` | Reads a rules file, runs it through `majMinExpand`, parses the result |
+| `majMinExpand.hpp/.cpp` | Maj/Min/OMaj/OMin/BMaj/BMin macro expansion and bid-sequence legality checking (see `hand-spec.md`); shared by Bidder and Dealer |
+| `bid.hpp` | `bid` type (integer 0–39), strain/level accessors, vulnerability enum — used by `majMinExpand` and Bidder's convention-tree builder alike |
 | `tnode.c/.h` | Parse tree node type for rule expressions |
 | `rawScore.cpp/.h` | Bridge scoring: raw trick-count → contract score |
 | `translations.c/.h` | PBN and BBO LIN serialization of hands and boards |
@@ -89,7 +91,6 @@ main()
 | File | Role |
 |------|------|
 | `bidlab.cpp` | `main()`, `auction`, `biddingSystem`, `convention`, `handScores`, `funcStats`/`funcTimer` |
-| `bid.hpp` | `bid` type (integer 0–39), strain/level accessors, vulnerability enum |
 | `bidderDeal.hpp/.cpp` | `bidderDeal`: extends `oneDeal` with N/S/E/W save/load helpers |
 | `fnscpp.cpp` | Hand evaluation (copy of shared file, compiled per-project) |
 | `io.c` | `print_time_estimate()`: elapsed/remaining time formatting |

@@ -35,6 +35,12 @@ extern FILE *lexin;
 ":="	{
 		return (GETS);
 	}
+":&"	{
+		return (ANDGETS);
+	}
+":|"	{
+		return (ORGETS);
+	}
 "AND"	{
 		return (AND);
 	}

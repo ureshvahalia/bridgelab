@@ -70,6 +70,80 @@ run_test "Test 6" -i testinput.txt -p test6 4 AK732.Q86.95.A63 Any Q54.T753.AJ6.
 run_test "Test A" -i testinput.txt -F testhands.csv -p testdetails 16
 { echo "Test A:"; echo "======="; cat testdetailsSDA.csv; } >> testresults.txt
 
+# ── Maj/Min/OMaj/OMin/BMaj/BMin macro-expansion convergence check ────────────
+# See majmin/. deallab shares the exact same preprocessor as bidlab (see
+# shared/majMinExpand.cpp) and is expected to expand a "$."-shaped auction
+# name into the same concrete forked rules, even though deallab has no
+# auction/bidding concept itself — it just uses the results as ordinary
+# named hand constraints. Not baseline-diffed — diffed against the same
+# golden file bidlab's regression test uses.
+rm -f majmin/input.txt.expanded.txt
+"$DEALER" -i majmin/input.txt -p majmin/conv -G -s 0 1 Any Any >/dev/null 2>majmin/positive.stderr || true
+# Debug builds always define DEBUG2, so "[majMinExpand] ..." trace lines are
+# expected here — only flag genuinely unexpected stderr output (errors/warnings).
+if grep -v '^\[majMinExpand\]' majmin/positive.stderr | grep -q .; then
+    echo "Maj/Min regression test FAILED: unexpected stderr output:"
+    cat majmin/positive.stderr
+    exit 1
+fi
+if diff --strip-trailing-cr -u majmin/expected_expanded.txt majmin/input.txt.expanded.txt; then
+    echo "Maj/Min regression test PASSED"
+else
+    echo "Maj/Min regression test FAILED: expanded output does not match expected_expanded.txt"
+    exit 1
+fi
+
+# ── ":&" / ":|" definition-modifier checks ────────────────────────────────────
+# See andor/. Same shared bridge.y/bridge.l/majMinExpand.cpp as bidlab, so the
+# same three checks apply here: the Maj/Min name-fork + ":&" convergence
+# check (diffed against the same golden file bidlab's andor test uses),
+# ":&" on an undefined name failing at load time, and a plain ":=" redefinition
+# warning rather than failing. Not baseline-diffed — bidlab/test/andor/input.txt
+# already covers the behavioral (does ":&"/":|" produce the same bids as hand-
+# duplicating the condition) side; deallab has no equivalent auction concept.
+ANDOR_OK=1
+rm -f andor/maj_fork.txt.expanded.txt
+"$DEALER" -i andor/maj_fork.txt -p andor/conv -G -s 0 1 Any Any >/dev/null 2>andor/maj_fork.stderr || true
+if grep -v '^\[majMinExpand\]' andor/maj_fork.stderr | grep -q .; then
+    echo "andor regression test FAILED: unexpected stderr output for andor/maj_fork.txt:"
+    cat andor/maj_fork.stderr
+    ANDOR_OK=0
+fi
+if ! diff --strip-trailing-cr -u andor/expected_maj_fork_expanded.txt andor/maj_fork.txt.expanded.txt; then
+    echo "andor regression test FAILED: andor/maj_fork.txt expanded output does not match expected_maj_fork_expanded.txt"
+    ANDOR_OK=0
+fi
+
+rm -f andor/undefined_target.txt.expanded.txt
+UNDEF_EXIT=0
+"$DEALER" -i andor/undefined_target.txt -p andor/conv -G -s 0 1 Any Any >/dev/null 2>andor/undefined_target.stderr || UNDEF_EXIT=$?
+if [ "$UNDEF_EXIT" -eq 0 ]; then
+    echo "andor regression test FAILED: andor/undefined_target.txt should be rejected at load time (got exit 0)"
+    ANDOR_OK=0
+fi
+if ! grep -q "requires an earlier definition of \$.1N." andor/undefined_target.stderr; then
+    echo "andor regression test FAILED: andor/undefined_target.txt: expected an 'earlier definition' error"
+    ANDOR_OK=0
+fi
+
+rm -f andor/redefine.txt.expanded.txt
+REDEFINE_EXIT=0
+"$DEALER" -i andor/redefine.txt -p andor/conv -G -s 0 1 Any Any >/dev/null 2>andor/redefine.stderr || REDEFINE_EXIT=$?
+if [ "$REDEFINE_EXIT" -ne 0 ]; then
+    echo "andor regression test FAILED: andor/redefine.txt should load successfully (warning, not error), got exit $REDEFINE_EXIT"
+    ANDOR_OK=0
+fi
+if ! grep -q "warning: redefining \$WEAK" andor/redefine.stderr; then
+    echo "andor regression test FAILED: andor/redefine.txt: expected a redefinition warning"
+    ANDOR_OK=0
+fi
+
+if [ "$ANDOR_OK" -eq 1 ]; then
+    echo "andor regression test PASSED"
+else
+    exit 1
+fi
+
 # ── Baseline mode ─────────────────────────────────────────────────────────────
 if [ "$BASELINE_ARG" = "--baseline" ]; then
     cp testresults.txt baseline.txt

@@ -260,6 +260,10 @@ biddingSystem::processRule (void* def)
     if (*cp++ != '.')   // Skip the '.' after the '$'
         return;   // Not a convention
     convention* c1 = this;
+    // Bid-sequence legality (ascending rank) is enforced upstream, in the
+    // shared Maj/Min macro-expansion preprocessor (shared/majMinExpand.cpp),
+    // for every "$."-shaped rule name — auto-generated or hand-typed alike —
+    // before this tree is ever built.
     for (;;)    {
         bid b1;
         cp = parseBid (cp, &b1);

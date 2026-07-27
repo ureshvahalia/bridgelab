@@ -1,0 +1,6 @@
+$Any := (Points >= 0);
+$OpenS := (11 TO 21 Points) AND (Spades >= 5);
+$Resp4H := (Hearts >= 4);
+$.1S. := (11 TO 21 Points) AND (Spades >= 5);
+$.1S.1H. := (Hearts >= 4);
+END

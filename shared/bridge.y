@@ -4,6 +4,7 @@
 #include <strings.h>
 #include <ctype.h>
 #include "tnode.h"
+#include "majMinExpand.hpp"
 #define YYSTYPE TPTR
 #define YYDEBUG 1
 #include "bridge.parser.hh"
@@ -19,7 +20,7 @@ extern char* yytext;
 void
 yyerror (char const* msg)
 {
-	fprintf (stderr, "%s at line %d (near \"%s\")\n", msg, yylineno, yytext);
+	fprintf (stderr, "%s at line %d (near \"%s\")\n", msg, mapExpandedLineToOriginal (yylineno), yytext);
 }
 
 %}
@@ -29,7 +30,7 @@ yyerror (char const* msg)
 %token NUMBER AVAR KEYVAR SHAPE PATTERN DEFNAME
 %token LEQ GEQ EQU NEQ OR AND END TO
 
-%right GETS
+%right GETS ANDGETS ORGETS
 %left ';'
 %left OR
 %left '^'
@@ -69,6 +70,11 @@ def	:   DEFNAME GETS expr
 #ifdef DEBUG
 		    printf ("Making def %s\n", (char*)$1);
 #endif
+		    if (find_def_node (defroot, (const char*)$1) != NULL)	{
+                char msg[300];
+                snprintf (msg, sizeof (msg), "warning: redefining %s", (char*)$1);
+                yyerror (msg);
+		    }
 		    parent = make_leaf (TDEFINE, (long long)$1);
 		    $$ = add_leaves (parent, NULL, (TPTR)$3);
 		    if (defroot == NULL)
@@ -77,13 +83,50 @@ def	:   DEFNAME GETS expr
 		    printf ("Making def complete, defroot %p\n", defroot);
 #endif
 		}
+	|   DEFNAME ANDGETS expr
+		{
+		    parent = (TPTR)find_def_node (defroot, (const char*)$1);
+		    if (parent == NULL)	{
+                char msg[300];
+                snprintf (msg, sizeof (msg), "\":&\" requires an earlier definition of %s", (char*)$1);
+                yyerrok;
+                yyerror (msg);
+                exit (1);
+		    }
+		    parent1 = make_leaf (TAND, TAND);
+		    (void)add_leaves (parent1, parent->t_right, (TPTR)$3);
+		    (void)add_leaves (parent, NULL, parent1);
+		    $$ = NULL;
+		}
+	|   DEFNAME ORGETS expr
+		{
+		    parent = (TPTR)find_def_node (defroot, (const char*)$1);
+		    if (parent == NULL)	{
+                char msg[300];
+                snprintf (msg, sizeof (msg), "\":|\" requires an earlier definition of %s", (char*)$1);
+                yyerrok;
+                yyerror (msg);
+                exit (1);
+		    }
+		    parent1 = make_leaf (TOR, TOR);
+		    (void)add_leaves (parent1, parent->t_right, (TPTR)$3);
+		    (void)add_leaves (parent, NULL, parent1);
+		    $$ = NULL;
+		}
 	|   def ';' def
 		{
 #ifdef DEBUG
 		    printf ("Adding def %p to %p\n", $1, $3);
 #endif
-		    (void)add_leaves ((TPTR)lastDef, (TPTR)$3, NULL);
-		    $$ = lastDef = $3;
+		    /* ANDGETS/ORGETS reductions above yield $$ = NULL: they modify
+		     * an existing definition node in place rather than adding a new
+		     * one to the chain, so there is nothing new to link in and
+		     * lastDef must not move. */
+		    if ($3 != NULL)	{
+                (void)add_leaves ((TPTR)lastDef, (TPTR)$3, NULL);
+                lastDef = (TPTR)$3;
+		    }
+		    $$ = lastDef;
 #ifdef DEBUG
 		    printf ("Adding def complete, defroot %p\n", defroot);
 #endif
@@ -207,6 +250,13 @@ var	:   KEYVAR
 	|   DEFNAME
 		{
 		    $$ = (TPTR)(find_rule (defroot, (const char*)$1));
+		    if ($$ == 0)	{
+                char msg[256];
+                snprintf (msg, sizeof (msg), "undefined rule reference %s", (char*)$1);
+                yyerrok;
+                yyerror (msg);
+                exit (1);
+		    }
 		}
 	;
 %%

@@ -7,6 +7,21 @@ YACC = bison
 # Default build type
 TARGET = Debug
 
+# ── DDS version selection ──────────────────────────────────────────────────────
+# DDS=2 (default) links the bundled DDS 2.9.0 library in ../lib — output paths
+# are unchanged from before this option existed.
+# DDS=3 links DDS 3.0 (built from https://github.com/dds-bridge/dds, develop
+# branch), staged in ../lib/dds3. Both versions are linked against the same
+# shared/dll.h: DDS 3.0 renamed its own struct/field names internally, but the
+# memory layout is unchanged, so the old header remains valid against either
+# library with no source changes. Can be overridden: make DDS=3
+DDS ?= 2
+ifeq ($(DDS),2)
+    DDS_SUFFIX =
+else
+    DDS_SUFFIX = -dds$(DDS)
+endif
+
 # ── Platform detection ────────────────────────────────────────────────────────
 # Detects MSYS2, Cygwin, or Linux (including WSL).
 # Can be overridden on the command line: make PLAT=linux
@@ -47,10 +62,20 @@ else
     EXE_SUFFIX    =
 endif
 
+# DDS=3 override: different library layout/link requirements per platform.
+# DDS 3.0 has no boost dependency; GSL is still needed (our own pack.cpp RNG).
+ifeq ($(DDS),3)
+    ifeq ($(PLAT),linux)
+        PLAT_LIBS = -Wl,--start-group ../lib/dds3/linux/libdds3.a -Wl,--end-group -lpthread -lm -lgsl -lgslcblas
+    else
+        $(error DDS=3 is not yet built for PLAT=$(PLAT) — build it via WSL/Linux first; see lib/dds3/)
+    endif
+endif
+
 # ── Directory layout ──────────────────────────────────────────────────────────
 SRC_DIR = src
-BIN_DIR = bin/$(PLAT)/$(TARGET)
-OBJ_DIR = obj/$(PLAT)/$(TARGET)
+BIN_DIR = bin/$(PLAT)/$(TARGET)$(DDS_SUFFIX)
+OBJ_DIR = obj/$(PLAT)/$(TARGET)$(DDS_SUFFIX)
 
 # ── Shared source directory ───────────────────────────────────────────────────
 SHARED_DIR = ../shared
@@ -73,6 +98,7 @@ OBJS = \
     $(OBJ_DIR)/hands.o \
     $(OBJ_DIR)/dealerDeal.o \
     $(OBJ_DIR)/deallab.o \
+    $(OBJ_DIR)/majMinExpand.o \
     $(OBJ_DIR)/master.o \
     $(OBJ_DIR)/oneDeal.o \
     $(OBJ_DIR)/pack.o \

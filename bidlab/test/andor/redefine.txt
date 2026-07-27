@@ -1,0 +1,10 @@
+$Any := (Points >= 0);
+## Plain ":=" redefinition is allowed (not an error) but warns, since it's
+## more often a copy-paste accident than an intentional reassignment. Each
+## reference to $Weak already resolved before this point (there are none
+## here) would keep seeing the first definition; $.1H. below sees the second.
+$Weak := (Points < 12);
+$.1D. := $Weak;
+$Weak := (Points >= 12);
+$.1H. := $Weak;
+END

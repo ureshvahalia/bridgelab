@@ -1,0 +1,3 @@
+$Any := (Points >= 0);
+$Y := (Omaj > 3);
+END

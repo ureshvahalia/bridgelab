@@ -105,18 +105,34 @@ traverse_lrt (TPTR rootp, void (*action)(TPTR, int, int, void*), int level,
 	return (rootp->t_result);
 }
 
+/* Names are not required to be unique in the definition chain (a name may
+ * be redefined with ":="). find_def_node/find_rule always return the most
+ * recently defined match — the chain is walked in full, oldest first via
+ * t_left, remembering the last hit rather than returning on the first,
+ * so a later ":=" naturally supersedes an earlier one for anyone who looks
+ * the name up after that point. Nodes already spliced into an earlier
+ * reference's tree (via a prior find_rule call) hold a copy of the old
+ * t_right pointer and are unaffected by a later redefinition. */
 void*
-find_rule (void* defp, const char* name)
+find_def_node (void* defp, const char* name)
 {
     if (name == NULL)
         return NULL;
     TPTR nodep = (TPTR)defp;
+    TPTR found = NULL;
     while (nodep != NULL)	{
         if (strcmp ((char*)(nodep->t_val), name) == 0)
-            return nodep->t_right;
+            found = nodep;
         nodep = nodep->t_left;
     }
-	return NULL;
+    return found;
+}
+
+void*
+find_rule (void* defp, const char* name)
+{
+    TPTR nodep = (TPTR)find_def_node (defp, name);
+    return nodep ? nodep->t_right : NULL;
 }
 
 void*

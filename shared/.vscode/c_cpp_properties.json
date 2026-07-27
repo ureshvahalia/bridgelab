@@ -4,8 +4,8 @@
             "name": "Bidder",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/../Bidder.sav/src/**",
-                "${workspaceFolder}/../Bidder.sav/lib/**",
+                "${workspaceFolder}/../bidlab/src/**",
+                "${workspaceFolder}/../lib/**",
                 "C:/msys64/ucrt64/include"
             ],
             "defines": [
@@ -22,8 +22,8 @@
             "name": "Dealer",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/../dealer290.vscode/src/**",
-                "${workspaceFolder}/../dealer290.vscode/lib/**",
+                "${workspaceFolder}/../deallab/src/**",
+                "${workspaceFolder}/../lib/**",
                 "C:/msys64/ucrt64/include"
             ],
             "defines": [

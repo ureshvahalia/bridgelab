@@ -20,6 +20,10 @@ results.csv
 # Test-generated output (baseline.csv is the oracle)
 test/results.csv
 test/bbo.lin
+test/majmin/*.csv
+test/majmin/*.stderr
+test/andor/*.csv
+test/andor/*.stderr
 
 # Release packaging artefacts
 Package/

@@ -1,0 +1,6 @@
+$Any := (Points >= 0);
+## The motivating example: show a 4-card major over Stayman, but with both
+## majors held, always rebid 2H rather than 2S.
+$.1N.2C.2Maj. := (Maj > 3);
+$.1N.2C.2S. :& (Hearts < 4);
+END

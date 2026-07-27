@@ -16,6 +16,7 @@ lib/*.dll
 lib/*.dll.a
 lib/ucrt64/
 lib/mingw64/
+lib/dds3/
 lib/pkgconfig/
 
 # ── Program output ────────────────────────────────────────────────────────────
@@ -24,6 +25,10 @@ bidlab/output/
 deallab/details.csv
 deallab/output.csv
 deallab/results.csv
+
+# Every rules file now produces a sibling expanded copy (Maj/Min macro
+# preprocessing, see shared/majMinExpand.cpp) — regenerated on every run.
+*.expanded.txt
 
 # ── Development artefacts not useful to repo consumers ────────────────────────
 refactoring_plan.md

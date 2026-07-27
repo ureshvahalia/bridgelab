@@ -1,0 +1,5 @@
+$Any := (Points >= 0);
+$.1C.1S. := ((Spades > 3) AND (Hearts > 3)) AND (Hearts < 5);
+$.1C.1H. := ((Spades > 3) AND (Hearts > 3)) AND (Spades < 5);
+$X := ((Spades ?= 5) AND (Hearts ?= 4)) OR ((Hearts ?= 5) AND (Spades ?= 4));
+END

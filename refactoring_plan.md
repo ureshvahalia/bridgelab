@@ -1,5 +1,14 @@
 # BRIDGE Code Sharing Refactoring Plan
 
+**Status: Complete.** All phases below are implemented. This document describes
+the project as it was laid out before the rename to the current `bidlab` /
+`deallab` / `e:/Dealer_And_Bidder` structure — `Bidder.sav/` is now `bidlab/`,
+`dealer290.vscode/` is now `deallab/`, and `e:/BRIDGE/` is now
+`e:/Dealer_And_Bidder/`. Some file-level details below (e.g. `random.c`,
+`bridge_ly.h`, `bidder.cpp`) reflect that earlier layout and have since been
+further consolidated or removed; kept here as a historical record of the
+shared-code extraction, not as current file documentation.
+
 ## Background
 
 Two related projects share significant code:
