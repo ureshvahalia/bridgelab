@@ -79,6 +79,7 @@ def	:   DEFNAME GETS expr
 		    $$ = add_leaves (parent, NULL, (TPTR)$3);
 		    if (defroot == NULL)
                 lastDef = defroot = parent;
+		    index_def ((const char*)$1, parent);
 #ifdef DEBUG
 		    printf ("Making def complete, defroot %p\n", defroot);
 #endif

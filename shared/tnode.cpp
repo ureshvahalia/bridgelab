@@ -3,11 +3,22 @@
 /* and pointers to left and right subtrees. */
 
 #include <stdlib.h>
-#include <string.h>
 #include <stdio.h>
+#include <string>
+#include <unordered_map>
 #include "tnode.h"
 
 TPTR defroot;	/* root of definitions tree */
+
+/* One name->node map per definition tree, keyed by that tree's own root
+ * pointer (the value defroot holds once its first definition is created).
+ * read_rules() resets defroot to NULL and parses a fresh, independent tree
+ * on every call — e.g. once per bidding-system file loaded by bidlab — and
+ * each of those trees stays valid and separately queryable via its own root
+ * for the life of the process (nothing here is ever freed), so lookups must
+ * stay scoped to the tree they were asked about rather than always
+ * reflecting whichever tree happened to be parsed most recently. */
+static std::unordered_map<TPTR, std::unordered_map<std::string, TPTR>> defIndex;
 
 #ifdef DEBUG
 static char* typeNames[] = {
@@ -105,27 +116,25 @@ traverse_lrt (TPTR rootp, void (*action)(TPTR, int, int, void*), int level,
 	return (rootp->t_result);
 }
 
-/* Names are not required to be unique in the definition chain (a name may
- * be redefined with ":="). find_def_node/find_rule always return the most
- * recently defined match — the chain is walked in full, oldest first via
- * t_left, remembering the last hit rather than returning on the first,
- * so a later ":=" naturally supersedes an earlier one for anyone who looks
- * the name up after that point. Nodes already spliced into an earlier
- * reference's tree (via a prior find_rule call) hold a copy of the old
- * t_right pointer and are unaffected by a later redefinition. */
+/* Names are not required to be unique in a definition tree (a name may be
+ * redefined with ":="): index_def below always overwrites any previous
+ * entry for the same name in the same tree, so find_def_node/find_rule
+ * always return the most recently defined match — a later ":=" naturally
+ * supersedes an earlier one for anyone who looks the name up after that
+ * point. Nodes already spliced into an earlier reference's tree (via a
+ * prior find_rule call) hold a copy of the old t_right pointer and are
+ * unaffected by a later redefinition. */
 void*
 find_def_node (void* defp, const char* name)
 {
-    if (name == NULL)
+    if (defp == NULL || name == NULL)
         return NULL;
-    TPTR nodep = (TPTR)defp;
-    TPTR found = NULL;
-    while (nodep != NULL)	{
-        if (strcmp ((char*)(nodep->t_val), name) == 0)
-            found = nodep;
-        nodep = nodep->t_left;
-    }
-    return found;
+    auto treeIt = defIndex.find ((TPTR)defp);
+    if (treeIt == defIndex.end())
+        return NULL;
+    const std::unordered_map<std::string, TPTR>& names = treeIt->second;
+    auto nameIt = names.find (name);
+    return (nameIt != names.end()) ? (void*)nameIt->second : NULL;
 }
 
 void*
@@ -133,6 +142,16 @@ find_rule (void* defp, const char* name)
 {
     TPTR nodep = (TPTR)find_def_node (defp, name);
     return nodep ? nodep->t_right : NULL;
+}
+
+/* Registers node under name in the tree defroot currently identifies — call
+ * once per ":=", right after defroot is established (see bridge.y). Never
+ * called for ":&"/":|", which modify an existing node's t_right in place
+ * rather than creating a new one, so the name already maps to it. */
+void
+index_def (const char* name, void* node)
+{
+    defIndex[defroot][name] = (TPTR)node;
 }
 
 void*

@@ -78,10 +78,10 @@ main()
 | `pack.cpp/.hpp` | Card pack, Fisher-Yates shuffle, RNG (GSL Mersenne Twister) |
 | `fnscpp.cpp` | Hand evaluation: HCP, suit lengths, key-card counts, shape/pattern matching |
 | `fns_common.cpp` | C-linkage evaluation helpers shared with the parser |
-| `parse_rules.c/.h` | Reads a rules file, runs it through `majMinExpand`, parses the result |
+| `parse_rules.cpp/.h` | Reads a rules file, runs it through `majMinExpand`, parses the result |
 | `majMinExpand.hpp/.cpp` | Maj/Min/OMaj/OMin/BMaj/BMin macro expansion and bid-sequence legality checking (see `hand-spec.md`); shared by Bidder and Dealer |
 | `bid.hpp` | `bid` type (integer 0–39), strain/level accessors, vulnerability enum — used by `majMinExpand` and Bidder's convention-tree builder alike |
-| `tnode.c/.h` | Parse tree node type for rule expressions |
+| `tnode.cpp/.h` | Parse tree node type for rule expressions; also owns the `$Name` -> node lookup, a hash map keyed per definition tree (rather than a linear scan) since one process may load several independent rules files (see `biddingSystem` below) |
 | `rawScore.cpp/.h` | Bridge scoring: raw trick-count → contract score |
 | `translations.c/.h` | PBN and BBO LIN serialization of hands and boards |
 | `bridge.l / bridge.y` | Flex/Bison grammar for the rule language |

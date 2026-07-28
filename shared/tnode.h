@@ -56,6 +56,7 @@ extern TPTR make_leaf (enum nodeType, long long);
 extern TPTR add_leaves (TPTR, TPTR, TPTR);
 extern void* find_rule (void*, const char*);
 extern void* find_def_node (void*, const char*);
+extern void  index_def (const char*, void*);
 extern TPTR match_string (char*);
 #ifdef BIDDER
 extern void* combineRule (void* l, void* r);
