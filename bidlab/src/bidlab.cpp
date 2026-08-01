@@ -14,6 +14,7 @@
 #include "pack.hpp"
 #include "translations.h"
 #include "parse_rules.h"
+#include "log.h"
 extern "C" void print_time_estimate (time_t, time_t);
 #include "bidderDeal.hpp"
 #include "bid.hpp"
@@ -42,7 +43,7 @@ class funcStats {
     int     ncalls;
     LONGLONG   ticks;
     funcStats*      next;
-    void print ()   { printf ("%s: %d calls, %lld usec/call\n", name, ncalls, ncalls ? (ticks * MICROSECONDS_PER_SECOND / ncalls)/freq : -1); }
+    void print ()   { logDebug ("%s: %d calls, %lld usec/call\n", name, ncalls, ncalls ? (ticks * MICROSECONDS_PER_SECOND / ncalls)/freq : -1); }
   public:
     static LONGLONG freq;
     funcStats (const char* s);
@@ -245,7 +246,7 @@ biddingSystem::biddingSystem (char* fileName)
         name[cp - fileName] = 0;
     } else
         strcpy (name, fileName);
-    printf ("Building system %s\n", name);
+    logInfo ("Building system %s\n", name);
     ruleList = read_rules (fileName);
     if (ruleList != NULL)   {
         for (void* rule = ruleList; rule !=NULL; rule = next_rule (rule))
@@ -326,6 +327,23 @@ handScores::addResults (ddTableResults* rp, vulnerability v, char* cp)
 typedef biddingSystem* systemp;
 typedef char* systemNamep;
 
+static vulnerability defaultVul   = NoneVul;   // set from -V; None unless specified
+static bool          vulFromBoard = false;     // -V Bno: derive vulnerability from board number instead
+
+// Standard duplicate board-vulnerability cycle, board 1 = None, 2 = NS, 3 = EW, 4 = Both, ...
+static const vulnerability boardVulCycle[16] = {
+    NoneVul, NSVul,   EWVul,   BothVul,
+    NSVul,   EWVul,   BothVul, NoneVul,
+    EWVul,   BothVul, NoneVul, NSVul,
+    BothVul, NoneVul, NSVul,   EWVul
+};
+
+static vulnerability
+vulForBoard (int bno)   // bno is 1-based
+{
+    return boardVulCycle[(bno - 1) % 16];
+}
+
 class auction  {
     static constexpr bidName bidNames[] = { "ER", "ER", "ER", "ER", "P",
                                         "1C", "1D", "1H", "1S", "1N",
@@ -343,12 +361,15 @@ class auction  {
     char        bidStr[MAXNAMELEN];
     char*       nextBidp;
     convention* sysp;   // System from this point in auction
+    convention* rootSysp;   // Root of the tree for this bidHand() call, for the pass-retry below
+    bool        allPassSoFar;  // True until the first non-Pass call of this auction
     int         whoseTurn;
     handScores  totScores;
     bid         maxBid;
     bid         bestContract;
     int         bestScore;
     int         bestBy;
+    int         parScore;  // = bestScore at the time setSDAPar() ran; survives later initializeBidding() resets
     int         declarer[DDS_STRAINS];
     vulnerability   v;
     char        dealLIN[256];
@@ -368,15 +389,17 @@ class auction  {
     // Creates a deal from pbnStr. If pbnStr is NULL, creates random deal matching the rules
     // Saves North and South hands in hands array
     // Analyzes the deal to identify single dummy par results for each contract and saves in totScores
-    void    bidHand (systemp sp);
-    void    outputResults ();
+    void    bidHand (systemp sp, int sysIndex);
+    void    outputResults (int sysIndex);
     static void writeHeaders (systemNamep* systemNames);
+    static void writeSummary (systemNamep* systemNames);
 };
 
 auction::auction (void* rulep[4])
-    :   v (NoneVul)
+    :   v (defaultVul)
 {
     initializeBidding ();
+    parScore = 0;
     for (int i = 0; i < 4; i++)
         rules[i] = rulep[i];
     *bidStr = 0;
@@ -409,19 +432,21 @@ auction::initializeBidding ()
     bestContract = bidPass;
     bestScore = 0;
     bestBy = 0;
+    allPassSoFar = true;
 }
 
 void
-auction::bidHand (systemp sp)
+auction::bidHand (systemp sp, int sysIndex)
 {
     initializeBidding ();
     sysp = sp;
+    rootSysp = sp;
     rules[bidder] = rules[nextBidder()] = sp->findRule ("$ANY");   // reset to no info
 
     while (nextBid ())
         ;
 
-    outputResults ();
+    outputResults (sysIndex);
 }
 
 bool
@@ -437,14 +462,32 @@ auction::nextBid ()
             if ((rule != NULL) && hands[bidder].checkHand (rule))    // Found matching rule
                 break;
         }
+        if ((s == NULL) && allPassSoFar && (sysp != rootSysp))    {
+            // Every "$."-rule's path is built from the tree root (see
+            // biddingSystem::processRule), so a rule written as a bare
+            // opening (e.g. "$.1N.") only lives at the root and is never a
+            // child of "$.P." unless the file also spells out "$.P.1N.".
+            // When nothing but passes precede this call, retry the same
+            // hand against the root's children (the fresh-opener rules)
+            // before giving up -- this is what makes third/fourth-hand
+            // openers fall back to the same requirements as a first-hand
+            // opener unless the rules file explicitly overrides them with
+            // its own "$.P...." rule (which, being found above, always
+            // takes priority over this fallback).
+            for (s = rootSysp->firstChild (); s != NULL; s = s->nextSibling ()) {
+                void* rule = s->getRule();
+                if ((rule != NULL) && hands[bidder].checkHand (rule))
+                    break;
+            }
+        }
         if (s == NULL)  {   // No matching rule found. Take a guess at best contract
             bidVal = suggestContract ();
-            bidder = -1;
-            bidding.append (bidVal);
             if (bidVal > maxBid)    {   // New best bid
                 maxBid = bidVal;
                 setDeclarer (maxBid);
             }
+            bidder = -1;
+            bidding.append (bidVal);
             sprintf (nextBidp, "%s-AP", bidNames[bidVal]);
             nextBidp += ((bidVal == bidPass) ? 5 : 6);
             return false;
@@ -454,6 +497,8 @@ auction::nextBid ()
         }
         sysp = s;
     }
+    if (bidVal != bidPass)
+        allPassSoFar = false;
     if (bidVal > maxBid)    {   // New best bid
         maxBid = bidVal;
         setDeclarer (maxBid);
@@ -491,15 +536,18 @@ auction::writeDetails (FILE* dh, bool bothHands, handScores* hsp, const char* sc
 static int numSystems;
 static FILE* oh;
 static FILE* bboFp           = NULL;
-static int   bboBoardNum     = 0;
+static int   boardNum        = 0;   // 1-based; counts successfully-created deals
 static void* partnerRule     = NULL;
 static const char* partnerRuleName = NULL;
+static int*  impSum          = NULL;   // running IMPs-vs-par total, per system
+static int*  parMatches      = NULL;   // count of boards where we bid the par contract, per system
+static int   boardsScored    = 0;
 
 void
 auction::writeHandInfo ()
 {
     char s[LINE_LENGTH];
-    static int j = 0;
+
     char* cp = writePbnHand (s, hands[0].getHand(), NULL, hands[2].getHand(), NULL);
     *cp++ = ',';
     *cp++ = (((v == NoneVul) || (v == EWVul)) ? 'N' : 'V');
@@ -508,7 +556,6 @@ auction::writeHandInfo ()
     cp = hands[2].writeSummary (cp);
     sprintf (cp, "%s - %c,%d,", bidNames[bestContract],
              (bestBy == 0) ? 'N' : 'S', bestScore);
-    printf ("\n%d %s", j++, s);
     fprintf (oh, "%s", s);
 
     if (bboFp && *dealLIN)
@@ -516,14 +563,17 @@ auction::writeHandInfo ()
 }
 
 void
-auction::outputResults ()
+auction::outputResults (int sysIndex)
 {
     *(--nextBidp) = 0;  // Remove trailing '-'
-    if ((totScores.get (getDeclarer (maxBid), maxBid) / totHandsToCheck) > 2000)
-           printf("Unusual score: %s,%s - %c,%d,", bidStr, bidNames[maxBid], (getDeclarer (maxBid) == 0) ? 'N' : 'S',
-                totScores.get (getDeclarer (maxBid), maxBid) / totHandsToCheck);
-        fprintf (oh, "%s,%s - %c,%d,", bidStr, bidNames[maxBid], (getDeclarer (maxBid) == 0) ? 'N' : 'S',
-             totScores.get (getDeclarer (maxBid), maxBid) / totHandsToCheck);
+    int score = totScores.get (getDeclarer (maxBid), maxBid) / totHandsToCheck;
+    if (score > 2000)
+           logWarning ("Unusual score: %s,%s - %c,%d,", bidStr, bidNames[maxBid], (getDeclarer (maxBid) == 0) ? 'N' : 'S', score);
+    int impDiff = imps (score - parScore);
+    fprintf (oh, "%s,%s - %c,%d,%d,", bidStr, bidNames[maxBid], (getDeclarer (maxBid) == 0) ? 'N' : 'S', score, impDiff);
+    impSum[sysIndex] += impDiff;
+    if (score == parScore)
+        parMatches[sysIndex]++;
 }
 
 void
@@ -534,7 +584,7 @@ auction::writeHeaders (systemNamep* systemNames)
                  "S Pts,S Ctls,S KC S,S KC H,S KC D,S KC C,S S,S H,S D,S C,S pattern,S shape,"
                  "Par Bid,Par Score,");
     for (systemNamep* snpp = systemNames; snpp < systemNames + numSystems; snpp++)
-        fprintf (oh, "Bidding %s,Contract %s,Score %s,", *snpp, *snpp, *snpp);
+        fprintf (oh, "Bidding %s,Contract %s,Score %s,IMPs vs Par %s,", *snpp, *snpp, *snpp, *snpp);
     fprintf (oh, "\n");
     if (detailh)    {
         fprintf (detailh, "Hand,Bidding,Bidder,");
@@ -542,6 +592,18 @@ auction::writeHeaders (systemNamep* systemNames)
         for (b = bidPass + 1; b < bidMaxBid; b++)
             fprintf (detailh, "%s N,%s S,", bidNames[b], bidNames[b]);
         fprintf (detailh, "%s N,%s S\n", bidNames[b], bidNames[b]);  // last one will be newline-terminated
+    }
+}
+
+void
+auction::writeSummary (systemNamep* systemNames)
+{
+    systemNamep* snpp = systemNames;
+    for (int sysIndex = 0; sysIndex < numSystems; sysIndex++, snpp++)   {
+        double avgImps = boardsScored ? ((double)impSum[sysIndex] / boardsScored) : 0.0;
+        double parPct  = boardsScored ? (100.0 * parMatches[sysIndex] / boardsScored) : 0.0;
+        logInfo ("System %s: average IMPs vs par = %.2f, bid par contract %d/%d (%.1f%%)\n",
+                *snpp, avgImps, parMatches[sysIndex], boardsScored, parPct);
     }
 }
 
@@ -576,7 +638,6 @@ runSimulation (handScores* hsp, bidderDeal* dp, bool twoKnown, vulnerability v)
             if ((handsThisRound == maxHandsPerRound) || (handsChecked == totHandsToCheck))   {
                 // Analyze this subset
                 DDdealsPBN.noOfTables = handsThisRound;
-                printf (".");
                 {
                     funcTimer tmr (&ddsStats);
                     int res = CalcAllTablesPBN (&DDdealsPBN, 0, trumpFilter, &tableRes, &pres);
@@ -584,7 +645,7 @@ runSimulation (handScores* hsp, bidderDeal* dp, bool twoKnown, vulnerability v)
                         enum { lineSize = 80 };
                         char line[lineSize];
                         ErrorMessage(res, line);
-                        printf("DDS error: %s\n", line);
+                        logError ("DDS error: %s\n", line);
                         exit (1);
                     }
                 }
@@ -597,7 +658,7 @@ runSimulation (handScores* hsp, bidderDeal* dp, bool twoKnown, vulnerability v)
                     break;
                 enum { progressInterval = 1000 };
                 if ((handsChecked % progressInterval) == 0)
-                    printf ("Processed hand %d\n", handsChecked);
+                    logInfo ("Processed hand %d\n", handsChecked);
                 handsThisRound = 0;
             }
         }
@@ -617,13 +678,12 @@ auction::suggestContract ()
                      rules[(bidder + 2) % NHANDS], rules[(bidder + 3) % NHANDS]);
     thePack.reshuffle ();
     if (!deal.enterNorth (&hands[bidder]))  {
-        printf ("Error entering known hand\n");
+        logError ("Error entering known hand\n");
         return bidInvalid;
     }
 
     handScores expectedScores;
     runSimulation(&expectedScores, &deal, false, v);
-    printf (",");
 
     if (detailh && (maxBid > bidNotFound))
         writeDetails (detailh, false, &expectedScores, "Bid");
@@ -665,13 +725,13 @@ auction::setSDAPar ()
         }
     }
     bestScore /= totHandsToCheck;
+    parScore = bestScore;   // preserved across the initializeBidding() reset at the top of each bidHand()
 }
 
 bool
 auction::createDeal (char* pbnStr)
 {
     bidderDeal deal (rules[0], rules[1], rules[2], rules[3], partnerRule);
-    printf("%s, %s:", (TPTR)rules[0] ? ((TPTR)rules[0])->t_desc : "No rule", (TPTR)rules[2] ? ((TPTR)rules[2])->t_desc : "No rule");
     if (pbnStr == NULL) {
         int i;
         for (i = 0; i < MAXTRIES; i++)  {
@@ -690,16 +750,17 @@ auction::createDeal (char* pbnStr)
         if (!deal.enterPbn (pbnStr))
             return false;
     }
-    printf(".");
+    boardNum++;
+    if (vulFromBoard)
+        v = vulForBoard (boardNum);
     if (bboFp)
-        deal.makeLINrec (dealLIN, ++bboBoardNum);   // capture before reshuffle clears hands
+        deal.makeLINrec (dealLIN, boardNum);   // capture before reshuffle clears hands
     thePack.reshuffle();
     if (!deal.saveNorth (&hands[0]) || !deal.saveSouth (&hands[2])) {
-        printf ("Error saving known hands\n");
+        logError ("Error saving known hands\n");
         return false;
     }
     runSimulation(&totScores, &deal, true, v);
-    printf (",");
 
     bidder = 0;
     if (detailh)
@@ -736,7 +797,9 @@ main (int argc, char** argv)
     systemp* systemsList;
     systemNamep* systemNames;
 
-	// Syntax: dealer [-d directory] [-i infile[,infile]...] [-o outfile] [=v detailfile] [reps [ruleN [ruleE [ruleS [ruleW]]]]]
+	// Syntax: dealer [-d directory] [-i infile[,infile]...] [-o outfile] [=v detailfile]
+	//                [-V None|NS|EW|Both|Bno] [-s seed] [-L error|warning|info|debug]
+	//                [reps [ruleN [ruleE [ruleS [ruleW]]]]]
     // Missing rules will be replaced by $ANY
     int i = 1;
     while ((argc > (i+1)) && (*argv[i] == '-')) {
@@ -785,28 +848,51 @@ main (int argc, char** argv)
             i += 2;
             continue;
         }
+        if (strcmp (argv[i], "-L") == 0)    {
+            if (!logSetLevelFromString (argv[i + 1]))
+                logError ("Unrecognized -L level %s (expected error|warning|info|debug)\n", argv[i + 1]);
+            i += 2;
+            continue;
+        }
+        if (strcmp (argv[i], "-V") == 0)    {
+            char vbuf[8];
+            snprintf (vbuf, sizeof (vbuf), "%s", argv[i + 1]);
+            upcase_str (vbuf);
+            if (strcmp (vbuf, "NS") == 0)
+                defaultVul = NSVul;
+            else if (strcmp (vbuf, "EW") == 0)
+                defaultVul = EWVul;
+            else if (strcmp (vbuf, "BOTH") == 0)
+                defaultVul = BothVul;
+            else if (strcmp (vbuf, "BNO") == 0)
+                vulFromBoard = true;
+            else
+                defaultVul = NoneVul;   // "None", or anything unrecognized
+            i += 2;
+            continue;
+        }
     }
     if (chdir (path) != 0)  {
-        printf ("failed to change directory to %s\n", path);
+        logError ("failed to change directory to %s\n", path);
         perror ("chdir");
         exit (1);
     }
     oh = fopen (output, "w");
     if (oh == NULL)   {
-        printf ("Failed to open output%s", output);
+        logError ("Failed to open output%s", output);
         perror ("fopen");
         exit (1);
     }
     bboFp = fopen (bboFile, "w");
     if (bboFp == NULL)   {
-        printf ("Failed to open %s", bboFile);
+        logError ("Failed to open %s", bboFile);
         perror ("fopen");
         exit (1);
     }
     if (*pbnFile)   {
         pbnh = fopen (pbnFile, "r");
         if (pbnh == NULL)   {
-            printf ("Failed to open %s", pbnFile);
+            logError ("Failed to open %s", pbnFile);
             perror ("fopen");
             exit (1);
         }
@@ -814,7 +900,7 @@ main (int argc, char** argv)
     if (*detailFile)    {
         detailh = fopen (detailFile, "w");
         if (detailh == NULL)   {
-            printf ("Failed to open %s", detailFile);
+            logError ("Failed to open %s", detailFile);
             perror ("fopen");
             exit (1);
         }
@@ -838,7 +924,7 @@ main (int argc, char** argv)
             *fileEnd = 0;
         *s = new biddingSystem (inFile);
         if (!(*s)->isValid())   {
-            printf ("failed to build system\n");
+            logError ("failed to build system\n");
             exit (1);
         }
         s++;
@@ -847,13 +933,16 @@ main (int argc, char** argv)
     } while (fileEnd != NULL);
     assert (s == (systemsList + numSystems));
 
+    impSum = new int[numSystems]();
+    parMatches = new int[numSystems]();
+
     if (partnerRuleName) {
         char prBuf[MAXNAMELEN];
         snprintf (prBuf, sizeof (prBuf), "$%s", partnerRuleName);
         upcase_str (prBuf + 1);
         partnerRule = systemsList[0]->findRule (prBuf);
         if (partnerRule == NULL) {
-            printf ("Could not find partner rule %s\n", partnerRuleName);
+            logError ("Could not find partner rule %s\n", partnerRuleName);
             exit (1);
         }
     }
@@ -887,11 +976,13 @@ main (int argc, char** argv)
         rulep[3] = systemsList[0]->findRule (prefixed);
     }
 
-	auction::writeHeaders (systemNames);
+	logInfo ("Starting deal generation\n");
+    auction::writeHeaders (systemNames);
     time_t t0 = time(0);
     int repsDone = 0;
     time_t t1;
     int snum;
+    enum { reportInterval = 100 };   // print elapsed/remaining time every N boards
 	if (pbnh == NULL)   {
         while (reps > 0)    {
             if (detailh) {
@@ -900,10 +991,14 @@ main (int argc, char** argv)
             }
             auction a (rulep);
             (void)a.createDeal (NULL);
+            boardsScored++;
             for (snum = 0; snum < numSystems; snum++)
-                a.bidHand (systemsList[snum]);
+                a.bidHand (systemsList[snum], snum);
             t1 = time (0) - t0;
-            print_time_estimate (t1, t1 * (--reps) / (++repsDone));
+            --reps;
+            ++repsDone;
+            if ((repsDone % reportInterval) == 0)
+                print_time_estimate (t1, t1 * reps / repsDone);
             fprintf (oh, "\n");
             fflush (oh);
         }
@@ -917,10 +1012,13 @@ main (int argc, char** argv)
             }
             auction a (rulep);
             if (a.createDeal (pbnDeal))   {
+                boardsScored++;
                 for (snum = 0; snum < numSystems; snum++)
-                    a.bidHand (systemsList[snum]);
+                    a.bidHand (systemsList[snum], snum);
                 t1 = time (0) - t0;
-                print_time_estimate (t1, t1 / (++repsDone));
+                ++repsDone;
+                if ((repsDone % reportInterval) == 0)
+                    print_time_estimate (t1, t1 / repsDone);
                 fprintf (oh, "\n");
                 fflush (oh);
             }
@@ -930,7 +1028,8 @@ main (int argc, char** argv)
             }
         }
 	}
-    printf ("bidHand took %lld seconds\n", (long long)(time(0) - t0));
+    logInfo ("bidHand took %lld seconds\n", (long long)(time(0) - t0));
+    auction::writeSummary (systemNames);
     funcStats::printAll ();
     fclose (oh);
     if (bboFp)

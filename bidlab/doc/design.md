@@ -27,6 +27,7 @@ bidlab [options] reps [RuleN [RuleE [RuleS [RuleW]]]]
 | `-nchecks N` | Number of random EW holdings to simulate per deal (default 128) |
 | `-P ruleName` | Constraint on partner's hand (named rule from the system file) |
 | `-s seed` | RNG seed for reproducibility (default: time-based) |
+| `-L level` | Log level: `error`\|`warning`\|`info`\|`debug` (default `info`) |
 
 Positional arguments after options:
 - `reps` — number of deals to process
@@ -191,3 +192,18 @@ make clean-all # Remove all build artefacts
 ```
 
 See [Makefile](../Makefile) for platform detection, GSL static linking, and DLL copy logic.
+
+### Troubleshooting: "Cannot create temporary file in C:\WINDOWS\"
+
+If `make` fails partway through with a message like this from `g++`/`as`, it
+means the compiler couldn't resolve a writable temp directory from its own
+process environment and fell back to the (unwritable, for a normal user)
+Windows directory — it's not a problem with this Makefile or with `TMP`/`TEMP`
+as seen in your interactive shell. It shows up specifically when the build is
+launched from a wrapped/restricted shell (some CI runners, some sandboxed
+terminal integrations) whose child processes don't fully inherit the
+invoking shell's environment. It does not happen in a normal MSYS2 UCRT64
+shell or VS Code's integrated terminal. If you hit it, run the build from a
+plain MSYS2 shell (or, on Windows, from a plain PowerShell/cmd window with
+`C:\msys64\ucrt64\bin` on `PATH`) instead of whatever wrapped shell produced
+the error.
