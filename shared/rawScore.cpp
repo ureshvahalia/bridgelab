@@ -66,3 +66,22 @@ rawScore (int bid, int denom, int premium, int tricksMade, bool amVul)
         otBonus *= 2;
     return trickScore + bonus + ot * otBonus;
 }
+
+// Upper bound of each IMP bracket, 1 through 24.
+static const int impTable[] = {
+      10,   40,   80,  120,  160,  210,  260,  310,  360,  420,
+     490,  590,  740,  890, 1090, 1290, 1490, 1740, 1990, 2240,
+    2490, 2990, 3490, 3990
+};
+
+int
+imps (int scoreDiff)
+{
+    int sign = (scoreDiff < 0) ? -1 : 1;
+    int d = sign * scoreDiff;
+    int n = sizeof (impTable) / sizeof (impTable[0]);
+    int i = 0;
+    while ((i < n) && (d > impTable[i]))
+        i++;
+    return sign * i;
+}

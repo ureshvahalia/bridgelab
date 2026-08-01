@@ -21,4 +21,8 @@ enum { NORMAL = 1, DBL = 2, RDBL = 4 };
 // Returns a positive score for a made contract, negative for going down.
 int rawScore (int bid, int denom, int premium, int tricksMade, bool amVul);
 
+// Converts a duplicate score difference to IMPs, per the standard IMP table.
+// Sign of the result matches the sign of scoreDiff.
+int imps (int scoreDiff);
+
 #endif // _RAWSCORE_H_
