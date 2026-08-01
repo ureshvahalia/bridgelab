@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include "tnode.h"
+#include "log.h"
 
 TPTR defroot;	/* root of definitions tree */
 
@@ -20,8 +21,7 @@ TPTR defroot;	/* root of definitions tree */
  * reflecting whichever tree happened to be parsed most recently. */
 static std::unordered_map<TPTR, std::unordered_map<std::string, TPTR>> defIndex;
 
-#ifdef DEBUG
-static char* typeNames[] = {
+static const char* typeNames[] = {
     "TINT",
     "TASSIGN",
     "TKWORD",
@@ -50,7 +50,6 @@ static char* typeNames[] = {
     "TDEFINE",
     "TDEFNAME"
 };
-#endif
 
 /* Make a new leaf containing the given information */
 TPTR
@@ -58,18 +57,14 @@ make_leaf (enum nodeType type, long long val)
 {
 	TPTR leaf;
 
-#ifdef DEBUG
-	printf ("make_leaf: type %d, val %llx\n", type, val);
-#endif
+	logDebug ("make_leaf: type %d, val %llx\n", type, val);
 	leaf = (TPTR)malloc (sizeof (struct tnode));
 	leaf->t_type = type;
 	leaf->t_val  = val;
 	leaf->t_left = leaf->t_right = (TPTR)0;	/* No children yet */
 	leaf->t_result = 0;
 	write_leaf (leaf);
-#ifdef DEBUG
-	printf ("leaf at %p: type %s, val 0x%llX\n", leaf, typeNames[leaf->t_type], leaf->t_val);
-#endif
+	logDebug ("leaf at %p: type %s, val 0x%llX\n", leaf, typeNames[leaf->t_type], leaf->t_val);
 	return leaf;
 }
 
@@ -78,19 +73,15 @@ make_leaf (enum nodeType type, long long val)
 TPTR
 add_leaves (TPTR to, TPTR l, TPTR r)
 {
-#ifdef DEBUG
-	printf ("add_leaves: to %p, l %p, r %p\n", to, l, r);
-#endif
+	logDebug ("add_leaves: to %p, l %p, r %p\n", to, l, r);
 	if (l != NULL)
 	    to->t_left = l;
 	if (r != NULL)
 	    to->t_right = r;
     write_node (to);
-#ifdef DEBUG
-	printf ("Adding to leaf %p (type %s, val 0x%llX): left %p (type %s, val 0x%llX), right %p (type %s, val 0x%llX)\n",
+	logDebug ("Adding to leaf %p (type %s, val 0x%llX): left %p (type %s, val 0x%llX), right %p (type %s, val 0x%llX)\n",
 		to, typeNames[to->t_type], to->t_val, l, l ? typeNames[l->t_type] : 0, l ? l->t_val : 0,
 		r, r ? typeNames[r->t_type] : 0, r ? r->t_val : 0);
-#endif
 	return to;
 }
 

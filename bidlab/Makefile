@@ -105,6 +105,7 @@ OBJS = \
     $(OBJ_DIR)/io.o \
     $(OBJ_DIR)/fnscpp.o \
     $(OBJ_DIR)/fns_common.o \
+    $(OBJ_DIR)/log.o \
     $(OBJ_DIR)/majMinExpand.o \
     $(OBJ_DIR)/oneDeal.o \
     $(OBJ_DIR)/pack.o \

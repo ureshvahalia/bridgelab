@@ -3,6 +3,7 @@
 #include "pack.hpp"
 #include <sys/time.h>
 #include <gsl/gsl_rng.h>
+#include "log.h"
 
 #define MAX_RAND_CALLS  20000
 int randCalls = 0;
@@ -29,7 +30,7 @@ getRand ()
         } else {
             struct timeval tv;
             if (gettimeofday (&tv, NULL) != 0)
-                printf ("gettimeofday failed\n");
+                logError ("gettimeofday failed\n");
             gsl_rng_set (rng, tv.tv_usec);
         }
     }
@@ -144,6 +145,6 @@ lowpip (int suit)
 /* deals the lowest remaining card of a suit — not yet implemented */
 {
     (void)suit;
-    printf ("lowpip: not yet implemented\n");
+    logError ("lowpip: not yet implemented\n");
     return (-1);
 }

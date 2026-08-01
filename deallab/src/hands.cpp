@@ -15,6 +15,7 @@
 #include <string.h>
 #include "dll.h"
 #include "hands.h"
+#include "log.h"
 
 #define SP 0
 #define HE 1
@@ -272,23 +273,23 @@ unsigned char dcardHand[4] = { 'N', 'E', 'S', 'W' };
 
 void PrintFut(char title[], futureTricks * fut)
 {
-  printf("%s\n", title);
+  logDebug ("%s\n", title);
 
-  printf("%6s %-6s %-6s %-6s %-6s\n",
+  logDebug ("%6s %-6s %-6s %-6s %-6s\n",
          "card", "suit", "rank", "equals", "score");
 
   for (int i = 0; i < fut->cards; i++)
   {
     char res[15] = "";
     equals_to_string(fut->equals[i], res);
-    printf("%6d %-6c %-6c %-6s %-6d\n",
+    logDebug ("%6d %-6c %-6c %-6s %-6d\n",
            i,
            dcardSuit[ fut->suit[i] ],
            dcardRank[ fut->rank[i] ],
            res,
            fut->score[i]);
   }
-  printf("\n");
+  logDebug ("\n");
 }
 
 
@@ -350,10 +351,10 @@ bool CompareTable(ddTableResults * table, int handno)
 
 void PrintTable(ddTableResults * table)
 {
-  printf("%5s %-5s %-5s %-5s %-5s\n",
+  logDebug ("%5s %-5s %-5s %-5s %-5s\n",
          "", "North", "South", "East", "West");
 
-  printf("%5s %5d %5d %5d %5d\n",
+  logDebug ("%5s %5d %5d %5d %5d\n",
          "NT",
          table->resTable[4][0],
          table->resTable[4][2],
@@ -362,14 +363,14 @@ void PrintTable(ddTableResults * table)
 
   for (int suit = 0; suit < DDS_SUITS; suit++)
   {
-    printf("%5c %5d %5d %5d %5d\n",
+    logDebug ("%5c %5d %5d %5d %5d\n",
            dcardSuit[suit],
            table->resTable[suit][0],
            table->resTable[suit][2],
            table->resTable[suit][1],
            table->resTable[suit][3]);
   }
-  printf("\n");
+  logDebug ("\n");
 }
 
 
@@ -402,23 +403,23 @@ bool CompareDealerPar(parResultsDealer * par, int handno)
 
 void PrintPar(parResults * par)
 {
-  printf("NS score: %s\n", par->parScore[0]);
-  printf("EW score: %s\n", par->parScore[1]);
-  printf("NS list : %s\n", par->parContractsString[0]);
-  printf("EW list : %s\n", par->parContractsString[1]);
-  printf("\n");
+  logDebug ("NS score: %s\n", par->parScore[0]);
+  logDebug ("EW score: %s\n", par->parScore[1]);
+  logDebug ("NS list : %s\n", par->parContractsString[0]);
+  logDebug ("EW list : %s\n", par->parContractsString[1]);
+  logDebug ("\n");
 }
 
 
 void PrintDealerPar(parResultsDealer * par)
 {
-  printf("Score : %d\n", par->score);
-  printf("Pars : %d\n", par->number);
+  logDebug ("Score : %d\n", par->score);
+  logDebug ("Pars : %d\n", par->number);
 
   for (int i = 0; i < par->number; i++)
-    printf("Par %d : %s\n", i, par->contracts[i]);
+    logDebug ("Par %d : %s\n", i, par->contracts[i]);
 
-  printf("\n");
+  logDebug ("\n");
 }
 
 
@@ -426,14 +427,14 @@ bool ComparePlay(solvedPlay * solved, int handno)
 {
   if (solved->number != traceNo[handno])
   {
-    printf("err %d %d\n", solved->number, traceNo[handno]);
+    logDebug ("err %d %d\n", solved->number, traceNo[handno]);
     return false;
   }
 
   for (int i = 0; i < solved->number; i++)
     if (solved->tricks[i] != trace[handno][i])
     {
-      printf("error %d %d %d\n", i, solved->tricks[i],
+      logDebug ("error %d %d %d\n", i, solved->tricks[i],
              trace[handno][i]);
       return false;
     }
@@ -444,39 +445,39 @@ bool ComparePlay(solvedPlay * solved, int handno)
 
 void PrintBinPlay(playTraceBin * playp, solvedPlay * solved)
 {
-  printf("Number : %d\n", solved->number);
+  logDebug ("Number : %d\n", solved->number);
 
-  printf("Play %2d: %s %d\n",
+  logDebug ("Play %2d: %s %d\n",
          0, "--", solved->tricks[0]);
 
   for (int i = 1; i < solved->number; i++)
   {
-    printf("Play %2d: %c%c %d\n",
+    logDebug ("Play %2d: %c%c %d\n",
            i,
            dcardSuit[playp->suit[i - 1]],
            dcardRank[playp->rank[i - 1]],
            solved->tricks[i]);
   }
-  printf("\n");
+  logDebug ("\n");
 }
 
 
 void PrintPBNPlay(playTracePBN * playp, solvedPlay * solved)
 {
-  printf("Number : %d\n", solved->number);
+  logDebug ("Number : %d\n", solved->number);
 
-  printf("Play %2d: %s %d\n",
+  logDebug ("Play %2d: %s %d\n",
          0, "--", solved->tricks[0]);
 
   for (int i = 1; i < solved->number; i++)
   {
-    printf("Play %2d: %c%c %2d\n",
+    logDebug ("Play %2d: %c%c %2d\n",
            i,
            playp->cards[2 * (i - 1)],
            playp->cards[2 * i - 1],
            solved->tricks[i]);
   }
-  printf("\n");
+  logDebug ("\n");
 }
 
 
@@ -542,16 +543,16 @@ void PrintHand(char title[],
         text[line + s][c] = '\0';
     }
   }
-  printf("%s", title);
+  logDebug ("%s", title);
   char dashes[80];
   int l = static_cast<int>(strlen(title)) - 1;
   for (int i = 0; i < l; i++)
     dashes[i] = '-';
   dashes[l] = '\0';
-  printf("%s\n", dashes);
+  logDebug ("%s\n", dashes);
   for (int i = 0; i < DDS_HAND_LINES; i++)
-    printf("%s\n", text[i]);
-  printf("\n\n");
+    logDebug ("%s\n", text[i]);
+  logDebug ("\n\n");
 }
 
 

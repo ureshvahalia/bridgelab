@@ -6,7 +6,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/msys2/Debug/deallab.exe",
-            "args": ["-d", "statwork", "8", "Any", "Any"],
+            "args": ["-s", "0", "-d", "statwork", "8", "Any", "Any"],
             // "args": ["-d", "statwork", "-p", "2N3Nc", "-S", "-F", "2Nina.csv", "-E", "2048", "2048"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

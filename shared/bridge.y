@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include "tnode.h"
 #include "majMinExpand.hpp"
+#include "log.h"
 #define YYSTYPE TPTR
 #define YYDEBUG 1
 #include "bridge.parser.hh"
@@ -20,7 +21,7 @@ extern char* yytext;
 void
 yyerror (char const* msg)
 {
-	fprintf (stderr, "%s at line %d (near \"%s\")\n", msg, mapExpandedLineToOriginal (yylineno), yytext);
+	logError ("%s at line %d (near \"%s\")\n", msg, mapExpandedLineToOriginal (yylineno), yytext);
 }
 
 %}
@@ -47,29 +48,25 @@ yyerror (char const* msg)
 
 list	:    /* empty */
 	|   END
-		{   printf("Exit 1\n"); return 1;	}
+		{   logDebug ("Exit 1\n"); return 1;	}
 	|   list stat END
-		{   printf("Exit 2\n"); return 2;	}
+		{   logDebug ("Exit 2\n"); return 2;	}
 	|   list deflist END
-		{   printf("Exit 3\n"); return 3;	}
+		{   logDebug ("Exit 3\n"); return 3;	}
 	|   list error
 		{   yyerrok; yyerror ("syntax error"); exit (1);	}
 	;
 
 deflist	:   def
 		{
-#ifdef DEBUG
-		    printf ("Making deflist with %p\n", $1);
-#endif
+		    logDebug ("Making deflist with %p\n", $1);
 		    return 2;
 		}
 	;
 
 def	:   DEFNAME GETS expr
 		{
-#ifdef DEBUG
-		    printf ("Making def %s\n", (char*)$1);
-#endif
+		    logDebug ("Making def %s\n", (char*)$1);
 		    if (find_def_node (defroot, (const char*)$1) != NULL)	{
                 char msg[300];
                 snprintf (msg, sizeof (msg), "warning: redefining %s", (char*)$1);
@@ -80,9 +77,7 @@ def	:   DEFNAME GETS expr
 		    if (defroot == NULL)
                 lastDef = defroot = parent;
 		    index_def ((const char*)$1, parent);
-#ifdef DEBUG
-		    printf ("Making def complete, defroot %p\n", defroot);
-#endif
+		    logDebug ("Making def complete, defroot %p\n", defroot);
 		}
 	|   DEFNAME ANDGETS expr
 		{
@@ -116,9 +111,7 @@ def	:   DEFNAME GETS expr
 		}
 	|   def ';' def
 		{
-#ifdef DEBUG
-		    printf ("Adding def %p to %p\n", $1, $3);
-#endif
+		    logDebug ("Adding def %p to %p\n", $1, $3);
 		    /* ANDGETS/ORGETS reductions above yield $$ = NULL: they modify
 		     * an existing definition node in place rather than adding a new
 		     * one to the chain, so there is nothing new to link in and
@@ -128,15 +121,11 @@ def	:   DEFNAME GETS expr
                 lastDef = (TPTR)$3;
 		    }
 		    $$ = lastDef;
-#ifdef DEBUG
-		    printf ("Adding def complete, defroot %p\n", defroot);
-#endif
+		    logDebug ("Adding def complete, defroot %p\n", defroot);
 		}
     |   def ';' END
         {
-#ifdef DEBUG
-		    printf ("Making deflist end with %p\n", $1);
-#endif
+		    logDebug ("Making deflist end with %p\n", $1);
         }
 	;
 

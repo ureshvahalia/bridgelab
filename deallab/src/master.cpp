@@ -19,6 +19,7 @@
 #include "consts.h"
 #include "hands.h"
 #include "ddsinfo.hpp"
+#include "log.h"
 
 class handInfo  {
     int points;
@@ -178,7 +179,7 @@ dealInfo::writeCSVoutput (FILE* oh, char* pbnStr, vulnerabilityCodes vcode)
     while ((*cp != '\n') && (*cp != '\0'))
         *lp++ = *cp++;
     if (lp > line + 67)
-        printf ("Could not print hand %s", pbnStr);
+        logError ("Could not print hand %s", pbnStr);
     *lp++ = ',';
     convertToText (lp, vcode);
     fprintf (oh, "%s", line);
@@ -226,16 +227,16 @@ ddsMain (int handCount, ddsInfo* ddip, FILE* outFp, const char* filter, int decl
                                &tableRes, &pres);
         if (res != RETURN_NO_FAULT) {
             ErrorMessage(res, line);
-            printf("DDS error: %s\n", line);
+            logError ("DDS error: %s\n", line);
             for (int k = 0; k < handsThisRound; k++)
-                printf("%d: %s\n", k, DDdealsPBN.deals[k].cards);
+                logError ("%d: %s\n", k, DDdealsPBN.deals[k].cards);
             exit(1);
         }
 
         dealInfo deal;
         for (int handno = 0; handno < handsThisRound; handno++)    {
             if (deal.initialize (DDdealsPBN.deals[handno].cards) == NULL)
-                printf ("Could not translate %s", DDdealsPBN.deals[handno].cards);
+                logError ("Could not translate %s", DDdealsPBN.deals[handno].cards);
             for (int j = 0; j < DDS_STRAINS; j++)   {
                 if (trumpFilter[j] == 0)    {
                     ddip->setMaxTricks (handNum - 1, j, deal.maxTricks[j] = tableRes.results[handno].resTable[j][declarer]);

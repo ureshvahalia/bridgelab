@@ -1,6 +1,7 @@
 #include "csvparser.hpp"
 #include <stdio.h>
 #include <assert.h>
+#include "log.h"
 
 csvParser::csvParser (char* csvStr)
 {
@@ -35,7 +36,7 @@ csvParser::parseNext (char lim)
         s2++;
     }
     if (*s2)   {
-        printf ("Logic error in csvParse\n");
+        logError ("Logic error in csvParse\n");
         return NULL;
     }
     if (s2 == startChar)    // started with empty string

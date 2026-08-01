@@ -143,6 +143,7 @@ Options:
   -D declarer   N | S | E | W (default N)
   -E EWiters    Number of EW hands to iterate in SDA mode (default 128)
   -F handsFile  Input file of hands/rules for batch analysis
+  -L level      Log level: error|warning|info|debug (default info)
 
 Rules:
   If two rules supplied, they are assigned to N and S (E and W get $Any)

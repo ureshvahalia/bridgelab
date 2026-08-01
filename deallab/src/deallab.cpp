@@ -18,6 +18,7 @@ extern "C"  {
     extern void openFiles (const char*);
 }
 #include "parse_rules.h"
+#include "log.h"
 
 static const char* filter = "00000";
 static const char* handsFile;
@@ -112,7 +113,7 @@ readCases (char* caseFile)
                     listp->first = pip;
                 listp->last = pip;
             } else
-                printf ("Invalid rule %s\n", cp);
+                logError ("Invalid rule %s\n", cp);
             cp = cp2 + 1;
         } while (cp2 != NULL);
     }
@@ -264,7 +265,7 @@ static int
 SDAdriver (int reps, const char* ruleNames[NHANDS], char* sdaFile)
 {
     char line[LINE_LENGTH];
-    printf ("Enter SDAdriver\n");
+    logInfo ("Enter SDAdriver\n");
     sprintf (line, "%s %s %s %s", ruleNames[0], ruleNames[1], ruleNames[2], ruleNames[3]);
     sdaFp = setupSDAFile (sdaFile, line);
 	for (int repno = 0; repno < reps; repno++)	{   // Begin hand generation */
@@ -360,7 +361,7 @@ analyzeHands (int reps, char* sdaFile, bool doSDA, bool generateOnly)
             currentVul = VUL(dno);
         }
 
-        printf ("Hand %d, Vul %d: Rules %s, %s, %s, %s\n", hnum, currentVul, ruleNames[0], ruleNames[1], ruleNames[2], ruleNames[3]);
+        logInfo ("Hand %d, Vul %d: Rules %s, %s, %s, %s\n", hnum, currentVul, ruleNames[0], ruleNames[1], ruleNames[2], ruleNames[3]);
 
         // We have the known hands and rules
         if (generateOnly)   {
@@ -394,6 +395,7 @@ Options:\n\
   -D declarer:    N | S | E | W (default N)\n\
   -E EWiters:     Number of EW hands to iterate over\n\
   -F handsFile:   input file for hands\n\
+  -L level:       Log level: error|warning|info|debug (default info)\n\
 Rules:               \n\
                   [RuleN [RuleS]]\n\
                   RuleN RuleE RuleS [RuleW]\n\
@@ -411,10 +413,10 @@ main (int argc, char** argv)
     bool doSDA = false;     // default is DDA
     bool generateOnly = false;
     //	yydebug = 0;
-    printf ("Starting\n");
+    logInfo ("Starting\n");
 
     int optChar;
-    while ((optChar = getopt (argc, argv, "lSVGhd:i:p:f:D:E:F:P:s:")) != -1)  {
+    while ((optChar = getopt (argc, argv, "lSVGhd:i:p:f:D:E:F:P:s:L:")) != -1)  {
         switch (optChar)    {
             case 'S':
                 doSDA = true;
@@ -430,9 +432,13 @@ main (int argc, char** argv)
                 break;
             case 'd':
                 if (chdir (optarg) != 0)  {
-                    printf ("failed to change directory to %s\n", optarg);
+                    logError ("failed to change directory to %s\n", optarg);
                     pexit ("chdir");
                 }
+                break;
+            case 'L':
+                if (!logSetLevelFromString (optarg))
+                    logError ("Unrecognized -L level %s (expected error|warning|info|debug)\n", optarg);
                 break;
             case 'i':
                 inputFile = optarg;
@@ -492,9 +498,9 @@ main (int argc, char** argv)
     bboFp = fopen (bboFile, "w");
     if (!bboFp)
         pexit ("Could not open BBO.lin");
-    printf ("Reading rules\n");
+    logInfo ("Reading rules\n");
     (void) read_rules (inputFile);
-    printf ("Read rules\n");
+    logInfo ("Read rules\n");
 
     if (partnerRuleName)    {
         char s[ruleNameLen];
@@ -503,7 +509,7 @@ main (int argc, char** argv)
         upcase_str (s + 1);
         partnerRule = find_rule (defroot, s);
         if (partnerRule == NULL)    {
-            printf ("Could not find partner rule $%s\n", partnerRuleName);
+            logError ("Could not find partner rule $%s\n", partnerRuleName);
             exit (1);
         }
     }
@@ -540,7 +546,7 @@ main (int argc, char** argv)
                 doSDA ? SDAdriver (reps, ruleNames, sdaFile) : DDAdriver (reps, ruleNames, false));
     }
     time_t tt = time(0);
-    printf ("Time taken := %.f seconds\n", difftime (tt, start_time));
+    logInfo ("Time taken := %.f seconds\n", difftime (tt, start_time));
     dealerDeal::printReport ();
     if (bboFp)
         fclose (bboFp);

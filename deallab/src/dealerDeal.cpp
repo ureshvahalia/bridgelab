@@ -4,6 +4,7 @@
 #include <assert.h>
 #include "dealerDeal.hpp"
 #include "tnode.h"
+#include "log.h"
 
 int dealerDeal::handsDealt;
 
@@ -26,7 +27,7 @@ dealerDeal::dealerDeal (const char* rulenames[], void* pr)
         if (rulenames[i])  {
             if ((rules[i] = find_rule (defroot, rulenames[i])) == NULL) {
                 if (hands[i].dealFromPBN (rulenames[i]) == NULL)    {
-                    printf ("Could not process rule %s\n", rulenames[i]);
+                    logError ("Could not process rule %s\n", rulenames[i]);
                     exit (1);
                 }
                 nToDeal[i] = 0;
@@ -34,14 +35,14 @@ dealerDeal::dealerDeal (const char* rulenames[], void* pr)
                 nToDeal[i] = 13;
         } else  {
             if ((rules[i] = find_rule (defroot, "$ANY")) == NULL)   {
-                printf ("Could not process rule $ANY\n");
+                logError ("Could not process rule $ANY\n");
                 exit (1);
             }
             nToDeal[i] = 13;
         }
     }
     if ((nToDeal[0] + nToDeal[1] + nToDeal[2] + nToDeal[3]) != thePack.cardsLeft())   {
-        printf ("Logic error in dealerDeal constructor: cardsLeft %d\n", thePack.cardsLeft());
+        logError ("Logic error in dealerDeal constructor: cardsLeft %d\n", thePack.cardsLeft());
         exit (12);
     }
     myPack = thePack;
@@ -61,7 +62,7 @@ dealerDeal::writeSummaries (FILE* fp)
 void
 dealerDeal::printReport ()
 {
-    printf ("Total attempts = %d, randCalls = %d\n", handsDealt, randCalls);
+    logInfo ("Total attempts = %d, randCalls = %d\n", handsDealt, randCalls);
 }
 
 void
@@ -94,6 +95,6 @@ dealerDeal::dealAndCheck ()
             return true;
         }
     }
-    printf ("Exceeded MAXTRIES\n");
+    logWarning ("Exceeded MAXTRIES\n");
     return false;
 }

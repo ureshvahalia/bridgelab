@@ -4,6 +4,7 @@
 #include "consts.h"
 #include "ddsinfo.hpp"
 #include "rawScore.h"
+#include "log.h"
 
 class impTranslator {
     enum {
@@ -249,7 +250,7 @@ ddsInfo::setPars (vulnerabilityCodes vulCode, int nBestToPrint)
                 bestLevel = bidLvl;
                 bestImps = a;
                 if (a > 0)
-                    printf ("IMP score for %d%c better than raw par %s\n", bidLvl, suitAbbrv[s], par.getBidp());
+                    logDebug ("IMP score for %d%c better than raw par %s\n", bidLvl, suitAbbrv[s], par.getBidp());
             }
         }
     par.initialize2 (bestLevel, bestStrain);

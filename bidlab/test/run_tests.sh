@@ -97,9 +97,11 @@ MAJMIN_OK=1
 rm -f majmin/input.txt.expanded.txt
 
 "$BIDDER" -i majmin/input.txt -o majmin/results.csv -nchecks 4 1 Any Any >/dev/null 2>majmin/positive.stderr || true
-# Debug builds always define DEBUG2, so "[majMinExpand] ..." trace lines are
-# expected here — only flag genuinely unexpected stderr output (errors/warnings).
-if grep -v '^\[majMinExpand\]' majmin/positive.stderr | grep -q .; then
+# All log levels go to stderr (see shared/log.h), so routine "[INFO] ..."
+# startup/summary lines (and "[DEBUG] [majMinExpand] ..." traces, only emitted
+# with -L debug) are expected here — only flag genuinely unexpected stderr
+# output (warnings/errors).
+if grep -vE '^\[(INFO|DEBUG)\]' majmin/positive.stderr | grep -q .; then
     echo "Maj/Min regression test FAILED: unexpected stderr output for the positive expansion case:"
     cat majmin/positive.stderr
     MAJMIN_OK=0
@@ -152,7 +154,9 @@ fi
 ANDOR_OK=1
 rm -f andor/results.csv
 "$BIDDER" -s 0 -i andor/input.txt -o andor/results.csv -nchecks 32 3 .1N. NotPass >/dev/null 2>andor/positive.stderr || true
-if [ -s andor/positive.stderr ]; then
+# All log levels go to stderr (see shared/log.h); routine "[INFO] ..."
+# startup/summary lines are expected — only flag genuinely unexpected output.
+if grep -vE '^\[(INFO|DEBUG)\]' andor/positive.stderr | grep -q .; then
     echo "andor regression test FAILED: unexpected stderr output for andor/input.txt:"
     cat andor/positive.stderr
     ANDOR_OK=0
@@ -170,7 +174,7 @@ fi
 # that doesn't itself use a Maj/Min macro.
 rm -f andor/maj_fork.txt.expanded.txt
 "$BIDDER" -i andor/maj_fork.txt -o andor/maj_fork.csv -nchecks 4 1 Any Any >/dev/null 2>andor/maj_fork.stderr || true
-if grep -v '^\[majMinExpand\]' andor/maj_fork.stderr | grep -q .; then
+if grep -vE '^\[(INFO|DEBUG)\]' andor/maj_fork.stderr | grep -q .; then
     echo "andor regression test FAILED: unexpected stderr output for andor/maj_fork.txt:"
     cat andor/maj_fork.stderr
     ANDOR_OK=0

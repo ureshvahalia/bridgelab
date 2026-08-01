@@ -79,9 +79,11 @@ run_test "Test A" -i testinput.txt -F testhands.csv -p testdetails 16
 # golden file bidlab's regression test uses.
 rm -f majmin/input.txt.expanded.txt
 "$DEALER" -i majmin/input.txt -p majmin/conv -G -s 0 1 Any Any >/dev/null 2>majmin/positive.stderr || true
-# Debug builds always define DEBUG2, so "[majMinExpand] ..." trace lines are
-# expected here — only flag genuinely unexpected stderr output (errors/warnings).
-if grep -v '^\[majMinExpand\]' majmin/positive.stderr | grep -q .; then
+# All log levels go to stderr (see shared/log.h), so routine "[INFO] ..."
+# startup/summary lines (and "[DEBUG] [majMinExpand] ..." traces, only emitted
+# with -L debug) are expected here — only flag genuinely unexpected stderr
+# output (warnings/errors).
+if grep -vE '^\[(INFO|DEBUG)\]' majmin/positive.stderr | grep -q .; then
     echo "Maj/Min regression test FAILED: unexpected stderr output:"
     cat majmin/positive.stderr
     exit 1
@@ -104,7 +106,7 @@ fi
 ANDOR_OK=1
 rm -f andor/maj_fork.txt.expanded.txt
 "$DEALER" -i andor/maj_fork.txt -p andor/conv -G -s 0 1 Any Any >/dev/null 2>andor/maj_fork.stderr || true
-if grep -v '^\[majMinExpand\]' andor/maj_fork.stderr | grep -q .; then
+if grep -vE '^\[(INFO|DEBUG)\]' andor/maj_fork.stderr | grep -q .; then
     echo "andor regression test FAILED: unexpected stderr output for andor/maj_fork.txt:"
     cat andor/maj_fork.stderr
     ANDOR_OK=0

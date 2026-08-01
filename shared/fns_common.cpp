@@ -7,6 +7,7 @@
 #include "translations.h"
 #include "pack.hpp"
 #include "handInfo.hpp"
+#include "log.h"
 
 void
 aHand::deal ()
@@ -228,9 +229,7 @@ match_string (char* s)
 	const struct funcDesc* fdp;
 	TPTR node;
 
-#ifdef DEBUG
-	printf ("Calling match_string (%s)\n", s);
-#endif
+	logDebug ("Calling match_string (%s)\n", s);
     for (fdp = kword_fn_list; fdp->name != 0; fdp++)
         if (strcmp (s, fdp->name) == 0) {   /* found match */
             node = make_leaf (TKWORD, fdp - kword_fn_list);
@@ -364,7 +363,7 @@ eval_node (TPTR node, int , int , void* hand)
 			break;
         case TDEFINE:
         case TDEFNAME:
-            printf ("Unexpected value of TDEFINE or TDEFNAME\n");
+            logError ("Unexpected value of TDEFINE or TDEFNAME\n");
             break;
 	}
 /* 	printf ("got result %d\n", node->t_result); */
@@ -488,7 +487,7 @@ write_node (TPTR node)
 		case TKWORD:		/* keyword - call appropriate function */
 		case TSPOT:		/* specific card of specific suit */
         default:
-            printf ("Unexpected type %d in write_node\n", node->t_type);
+            logError ("Unexpected type %d in write_node\n", node->t_type);
 	}
 /* 	printf ("got result %d\n", node->t_result); */
 }

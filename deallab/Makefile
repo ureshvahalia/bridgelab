@@ -98,6 +98,7 @@ OBJS = \
     $(OBJ_DIR)/hands.o \
     $(OBJ_DIR)/dealerDeal.o \
     $(OBJ_DIR)/deallab.o \
+    $(OBJ_DIR)/log.o \
     $(OBJ_DIR)/majMinExpand.o \
     $(OBJ_DIR)/master.o \
     $(OBJ_DIR)/oneDeal.o \

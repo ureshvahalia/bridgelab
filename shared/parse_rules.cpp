@@ -3,6 +3,7 @@
 #include "tnode.h"
 #include "parse_rules.h"
 #include "majMinExpand.hpp"
+#include "log.h"
 
 extern int   yyparse ();
 
@@ -20,7 +21,7 @@ read_rules (const char* inFile)
 {
     FILE* fp = fopen (inFile, "r");
     if (fp == NULL)   {
-        printf ("Failed to open inFile %s", inFile);
+        logError ("Failed to open inFile %s", inFile);
         perror ("fopen");
         return NULL;
     }
