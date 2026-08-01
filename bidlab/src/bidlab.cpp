@@ -38,6 +38,8 @@ static constexpr LONGLONG MICROSECONDS_PER_SECOND = 1000000LL;
 
 static void upcase_str (char* s) { for (; *s; s++) *s = toupper((unsigned char)*s); }
 
+static bool rulesOnlyMode = false;   // --rules-only: stop at the first unmatched rule, no simulation/guessing
+
 class funcStats {
     char    name[MAXNAMELEN];
     int     ncalls;
@@ -363,6 +365,8 @@ class auction  {
     convention* sysp;   // System from this point in auction
     convention* rootSysp;   // Root of the tree for this bidHand() call, for the pass-retry below
     bool        allPassSoFar;  // True until the first non-Pass call of this auction
+    char        guessPointBidStr[MAXNAMELEN];  // auction so far, at the point suggestContract() would be called
+    bool        guessWasCalled;    // true once we've reached the "no matching rule" branch
     int         whoseTurn;
     handScores  totScores;
     bid         maxBid;
@@ -433,6 +437,8 @@ auction::initializeBidding ()
     bestScore = 0;
     bestBy = 0;
     allPassSoFar = true;
+    guessWasCalled = false;
+    *guessPointBidStr = 0;
 }
 
 void
@@ -481,6 +487,17 @@ auction::nextBid ()
             }
         }
         if (s == NULL)  {   // No matching rule found. Take a guess at best contract
+            guessWasCalled = true;
+            snprintf (guessPointBidStr, sizeof (guessPointBidStr), "%s", bidStr);
+            {
+                size_t len = strlen (guessPointBidStr);
+                if ((len > 0) && (guessPointBidStr[len - 1] == '-'))
+                    guessPointBidStr[len - 1] = 0;
+            }
+            if (rulesOnlyMode)  {   // Rules-only: stop here, no simulation, no final contract
+                bidder = -1;
+                return false;
+            }
             bidVal = suggestContract ();
             if (bidVal > maxBid)    {   // New best bid
                 maxBid = bidVal;
@@ -565,7 +582,12 @@ auction::writeHandInfo ()
 void
 auction::outputResults (int sysIndex)
 {
-    *(--nextBidp) = 0;  // Remove trailing '-'
+    if (nextBidp > bidStr)
+        *(--nextBidp) = 0;  // Remove trailing '-'
+    const char* auctionSoFar = guessWasCalled ? guessPointBidStr : bidStr;
+    fprintf (oh, "%s,", auctionSoFar);
+    if (rulesOnlyMode)
+        return;   // no simulation was run; no contract/score to report
     int score = totScores.get (getDeclarer (maxBid), maxBid) / totHandsToCheck;
     if (score > 2000)
            logWarning ("Unusual score: %s,%s - %c,%d,", bidStr, bidNames[maxBid], (getDeclarer (maxBid) == 0) ? 'N' : 'S', score);
@@ -583,8 +605,12 @@ auction::writeHeaders (systemNamep* systemNames)
                  "N Pts,N Ctls,N KC S,N KC H,N KC D,N KC C,N S,N H,N D,N C,N pattern,N shape,"
                  "S Pts,S Ctls,S KC S,S KC H,S KC D,S KC C,S S,S H,S D,S C,S pattern,S shape,"
                  "Par Bid,Par Score,");
-    for (systemNamep* snpp = systemNames; snpp < systemNames + numSystems; snpp++)
-        fprintf (oh, "Bidding %s,Contract %s,Score %s,IMPs vs Par %s,", *snpp, *snpp, *snpp, *snpp);
+    for (systemNamep* snpp = systemNames; snpp < systemNames + numSystems; snpp++)   {
+        if (rulesOnlyMode)
+            fprintf (oh, "Auction %s,", *snpp);
+        else
+            fprintf (oh, "Auction %s,Bidding %s,Contract %s,Score %s,IMPs vs Par %s,", *snpp, *snpp, *snpp, *snpp, *snpp);
+    }
     fprintf (oh, "\n");
     if (detailh)    {
         fprintf (detailh, "Hand,Bidding,Bidder,");
@@ -802,7 +828,14 @@ main (int argc, char** argv)
 	//                [reps [ruleN [ruleE [ruleS [ruleW]]]]]
     // Missing rules will be replaced by $ANY
     int i = 1;
-    while ((argc > (i+1)) && (*argv[i] == '-')) {
+    while ((i < argc) && (*argv[i] == '-')) {
+        if (strcmp (argv[i], "--rules-only") == 0)    {
+            rulesOnlyMode = true;
+            i += 1;
+            continue;
+        }
+        if (argc <= (i+1))  // remaining options below all require a value
+            break;
         if (strcmp (argv[i], "-d") == 0)    {
             snprintf(path, PATH_MAX, "%s", argv[i+1]);
             i += 2;
@@ -1029,7 +1062,8 @@ main (int argc, char** argv)
         }
 	}
     logInfo ("bidHand took %lld seconds\n", (long long)(time(0) - t0));
-    auction::writeSummary (systemNames);
+    if (!rulesOnlyMode)
+        auction::writeSummary (systemNames);
     funcStats::printAll ();
     fclose (oh);
     if (bboFp)

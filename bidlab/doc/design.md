@@ -28,6 +28,7 @@ bidlab [options] reps [RuleN [RuleE [RuleS [RuleW]]]]
 | `-P ruleName` | Constraint on partner's hand (named rule from the system file) |
 | `-s seed` | RNG seed for reproducibility (default: time-based) |
 | `-L level` | Log level: `error`\|`warning`\|`info`\|`debug` (default `info`) |
+| `--rules-only` | Stop each auction the moment no rule matches, instead of calling `suggestContract()`. No simulation is run for the guess step; `Bidding`/`Contract`/`Score`/`IMPs vs Par` columns are omitted and no end-of-run summary is logged. Par Bid/Par Score (from the per-deal SDA) are unaffected. |
 
 Positional arguments after options:
 - `reps` — number of deals to process
@@ -113,10 +114,12 @@ for each rep:
         bidHand(system)
             ├── walk convention tree: at each step, find first child whose rule matches the current hand
             ├── if a match is found: record bid, advance to next bidder
-            ├── if no match: call suggestContract()
+            ├── if no match: call suggestContract() (skipped in `--rules-only` mode, which
+            │   stops the auction there instead)
             │       ├── run SDA with only the known hand fixed
             │       └── pick highest-scoring available bid
-            └── outputResults(): append bidding sequence, contract, score to CSV
+            └── outputResults(): append auction-so-far (and, unless `--rules-only`,
+                bidding sequence/contract/score) to CSV
 ```
 
 ### Bid Encoding
@@ -167,7 +170,8 @@ output/
 | N Pts, N Ctls, N KC S/H/D/C, N S/H/D/C | North hand summary |
 | S Pts … S shape | South hand summary |
 | Par Bid, Par Score | Single-dummy par contract and expected score |
-| Bidding X, Contract X, Score X | Per-system columns (one set per `-i` file) |
+| Auction X | Auction so far when `suggestContract()` was invoked for system X, or the whole final auction if a rule ended it naturally without ever guessing. Under `--rules-only`, this is the only per-system column, since every auction is treated as incomplete. |
+| Bidding X, Contract X, Score X, IMPs vs Par X | Per-system columns (one set per `-i` file); omitted entirely under `--rules-only` |
 
 ---
 
