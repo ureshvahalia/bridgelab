@@ -16,6 +16,7 @@
 #include <vector>
 #include "bid.hpp"
 #include "majMinExpand.hpp"
+#include "log.h"
 
 namespace {
 
@@ -29,7 +30,30 @@ std::string upper (const std::string& s)
     return r;
 }
 
-bool isIdentChar (char c)   { return isalpha ((unsigned char)c) != 0; }
+// Mirrors the real lexer's identifier grammar, [a-zA-Z][a-zA-Z0-9]*: a word
+// must START with a letter (isIdentStart) but MAY CONTINUE with letters or
+// digits (isIdentChar). Keeping these separate matters: a leading digit
+// (e.g. "2Maj" in a bid-token position) must still act as a boundary so
+// "Maj" alone is recognized as the macro, but a trailing digit (e.g. a rule
+// named "bothMajors4") must NOT — it's part of the same identifier, not a
+// delimiter, so the word must extend through it and fail to match any
+// keyword, rather than getting truncated into a false keyword hit.
+bool isIdentStart (char c)  { return isalpha ((unsigned char)c) != 0; }
+bool isIdentChar (char c)   { return isalnum ((unsigned char)c) != 0; }
+
+// Mirrors the DEFNAME lexer rule, bridge.l:86: "$" followed by a run of
+// these characters. This is a completely separate token from KEYVAR
+// (bridge.l:90) — the real grammar never decomposes it looking for a
+// keyword inside, so once "$" is seen, the whole run must be skipped
+// atomically rather than scanned word-by-word. Without this, a rule-name
+// reference like "$best-major" or "$total.majors" would have "major"
+// wrongly picked out as the MAJ keyword, the same class of bug as the
+// digit-suffix case isIdentStart/isIdentChar fix above, but for names
+// containing '_', '-', or '.' instead of trailing digits.
+bool isDefNameChar (char c)
+{
+    return isalnum ((unsigned char)c) || (c == '_') || (c == '-') || (c == '.');
+}
 
 bool matchesWordCI (const std::string& text, size_t pos, const char* word)
 {
@@ -104,15 +128,26 @@ const char* keywordDisplayName (KeywordKind k)
 
 struct KeywordHit { size_t pos; size_t len; KeywordKind kind; };
 
-// Finds the next maximal run of letters, at or after fromPos, whose whole
-// (case-insensitive) text is one of our macro keywords. Word-boundary safe:
-// compares the *entire* letter run, so "Minor" is never mistaken for a
-// truncated "Min" and "AdMin"-style false positives can't happen.
+// Finds the next maximal identifier run (letter, then letters/digits), at or
+// after fromPos, whose whole (case-insensitive) text is one of our macro
+// keywords. Word-boundary safe: compares the *entire* identifier run, so
+// "Minor" is never mistaken for a truncated "Min", "AdMin"-style false
+// positives can't happen, "bothMajors4" is never mistaken for "BothMajors",
+// and "$best-majors"/"$total.majors" (DEFNAME references, skipped whole) are
+// never mistaken for "BothMajors" either.
 bool findNextKeywordWord (const std::string& text, size_t fromPos, KeywordHit& hit)
 {
     size_t i = fromPos, n = text.size();
     while (i < n) {
-        if (isIdentChar (text[i])) {
+        if (text[i] == '$') {
+            // DEFNAME reference (bridge.l:86-89) -- skip the whole
+            // "$" + [a-zA-Z0-9_-.]* run uninspected; it's never a keyword.
+            i++;
+            while (i < n && isDefNameChar (text[i]))
+                i++;
+            continue;
+        }
+        if (isIdentStart (text[i])) {
             size_t start = i;
             while (i < n && isIdentChar (text[i]))
                 i++;
@@ -132,13 +167,13 @@ bool findNextKeywordWord (const std::string& text, size_t fromPos, KeywordHit& h
 
 [[noreturn]] void fatal (const std::string& msg)
 {
-    fprintf (stderr, "%s\n", msg.c_str());
+    logError ("%s\n", msg.c_str());
     exit (1);
 }
 
 void warn (const std::string& msg)
 {
-    fprintf (stderr, "warning: %s\n", msg.c_str());
+    logWarning ("%s\n", msg.c_str());
 }
 
 // ── Statement splitting ────────────────────────────────────────────────────
@@ -180,7 +215,7 @@ std::vector<Stmt> splitStatements (const std::string& text)
         if (text[i] == '$') {
             size_t start = i;
             i++;
-            while (i < n && (isalnum ((unsigned char)text[i]) || text[i] == '_' || text[i] == '-' || text[i] == '.'))
+            while (i < n && isDefNameChar (text[i]))
                 i++;
             std::string name = text.substr (start, i - start);
             skipWsAndComments();
@@ -195,6 +230,15 @@ std::vector<Stmt> splitStatements (const std::string& text)
             int depth = 0;
             while (i < n) {
                 char c = text[i];
+                if (c == '$') {
+                    // Skip a DEFNAME reference whole, so "end" can't be
+                    // mistaken for the block terminator inside e.g.
+                    // "$threshold-end".
+                    i++;
+                    while (i < n && isDefNameChar (text[i]))
+                        i++;
+                    continue;
+                }
                 if (c == '(' || c == '[')
                     depth++;
                 else if (c == ')' || c == ']')
@@ -529,15 +573,13 @@ std::string expandMajMinMacros (const std::string& rawText, const char* inFile)
             }
         }
 
-#ifdef DEBUG2
         if (generated.size() > 1) {
             std::string trace = stmt.name + " ->";
             for (auto& g : generated) trace += " " + g.name + ",";
-            fprintf (stderr, "[majMinExpand] %s\n", trace.c_str());
+            logDebug ("[majMinExpand] %s\n", trace.c_str());
         } else if (generated[0].body != stmt.body) {
-            fprintf (stderr, "[majMinExpand] %s: body expanded\n", stmt.name.c_str());
+            logDebug ("[majMinExpand] %s: body expanded\n", stmt.name.c_str());
         }
-#endif
 
         for (const Generated& g : generated) {
             std::vector<BidNameToken> genTokens;
