@@ -30,6 +30,11 @@ $Strong  := Points >= 22
 END
 ```
 
+A missing `;` between two definitions is a load-time syntax error (exit 1),
+not a silent truncation — earlier versions of the parser could, for a
+missing `;`, silently stop reading the file at that point with no error at
+all, discarding every definition after it.
+
 A rule **name** starts with `$` and may contain letters, digits, `_`, `-`, and `.`:
 
 ```
@@ -137,6 +142,7 @@ These evaluate to a numeric property of the hand being tested.
 | `Diamonds` or `diamonds` | Number of diamonds held |
 | `Clubs` or `clubs` | Number of clubs held |
 | `Controls` or `controls` | Control count (Ace=2, King=1) |
+| `NLTC` | New Losing Trick Count (Koelman 2003 / Klinger), **doubled** to keep the language's integer arithmetic: missing Ace = 3, missing King = 2, missing Queen = 1 (the conventional value is 1.5/1.0/0.5 losers each — divide by 2 to get it), capped per suit at 3.0 real losers (6 doubled) same as classic LTC. On a partnership rule (see below), silently evaluates to the worst case for the combined suit lengths, since it's built from the same `haveCard`-based mechanism as the `Sa`/`Hk`/etc. spot-card keywords, which are `false` for every card on a combined hand. |
 
 ### Suit-Prefixed Keywords
 
@@ -287,7 +293,10 @@ Ten=4, Nine=5, …, Two=12.  Thus card code = suit × 13 + rank.
 A partnership rule is evaluated against the combined North+South hand.  All
 keywords return the sum of the two hands' values (`Points` = total NS HCP,
 `Spades` = combined spade length, etc.).  Card-presence queries (`Sa`, `Hk`,
-etc.) always return 0 for a partnership hand.
+etc.) always return 0 for a partnership hand.  `NLTC` is built on the same
+card-presence check, so it silently evaluates to the worst-case (maximum
+losers) value for the combined suit lengths rather than a meaningful
+partnership losing-trick count — no error is raised.
 
 In the Dealer, a partnership rule is applied with the `-P ruleName` flag after
 all four individual hand rules have been satisfied.
@@ -556,6 +565,41 @@ represents. Concretely, `NOT (BMaj > 3)` expands to `(NOT(Spades>3)) AND
 doesn't exceed 3" you'd get by properly negating "both exceed 3". If you
 need the negated reading, write it out with real suit names instead of
 negating the macro directly.
+
+### Referencing a Maj/Min-forked bid-sequence name from another rule's body
+
+A `$.`-name that uses `Maj`/`Min`/`OMaj`/`OMin` in its own name forks into
+several concrete rules (see above) — after expansion, the macro-form name
+itself (e.g. `$.2Major.`) is never defined, only the concrete forks it
+produced (`$.2H.`, `$.2S.`). If another rule's *body* needs to refer to "the
+2-major-preempt rule, whichever suit it turned out to be," writing the
+macro-form name there is handled automatically: a body-side `$`-reference
+that is itself bid-sequence-shaped and contains a Maj/Min-family token is
+replaced with a parenthesized OR of every concrete name it forks into,
+before that rule's own body is otherwise processed.
+
+```
+$.2Major. := (5 TO 10 Points) AND (Major ?= 6) AND (OMajor < 4) ;
+$.3Minor. := (5 TO 10 Points) AND (Minor ?= 7) AND (OMinor < 4) ;
+$.3Major. := (5 TO 10 Points) AND (Major >= 7) AND (OMajor < 4) ;
+$.P.      := (Points < 11) AND NOT ($.2Major. OR $.3Minor. OR $.3Major.) ;
+```
+
+`$.P.`'s body expands the three references before anything else runs on it,
+giving (schematically) `NOT (($.2H. OR $.2S.) OR ($.3D. OR $.3C.) OR ($.3H.
+OR $.3S.))` — "pass unless this hand would have opened one of the
+major/minor preempts defined above."
+
+This only applies to a reference that is both bid-sequence-shaped (matches
+the `$.<bid>.<bid>....` name grammar) and uses a Maj/Min-family token — an
+ordinary property reference (`$balanced`) or an already-concrete
+bid-sequence reference (`$.1N.2C.2H.`) is left exactly as written, same as
+today. The anchor rule (first occurrence of a pair must be `Maj`/`Min`, not
+`OMaj`/`OMin`) applies to the reference's *own* tokens only — a reference
+can't borrow an anchor established by the enclosing rule's name or an
+unrelated earlier body occurrence, so a reference's meaning is always
+readable from the reference itself rather than depending on where it
+happens to appear.
 
 ### Debugging expansions
 

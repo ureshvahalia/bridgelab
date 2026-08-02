@@ -1,0 +1,10 @@
+## Body-side reference to Maj/Min-forked bid-sequence names: $.2Major.,
+## $.3Minor., $.3Major. each fork on their own name (bid-token position);
+## $.P.'s body references all three by their macro-form names, which
+## should each expand to a parenthesized OR of the concrete forks.
+$Any := (Points >= 0);
+$.2Major. := (5 TO 10 Points) AND (Major ?= 6) AND (OMajor < 4) ;
+$.3Minor. := (5 TO 10 Points) AND (Minor ?= 7) AND (OMinor < 4) ;
+$.3Major. := (5 TO 10 Points) AND (Major >= 7) AND (OMajor < 4) ;
+$.P. := (Points < 11) AND NOT ($.2Major. OR $.3Minor. OR $.3Major.)
+END

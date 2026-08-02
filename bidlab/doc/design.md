@@ -28,7 +28,8 @@ bidlab [options] reps [RuleN [RuleE [RuleS [RuleW]]]]
 | `-P ruleName` | Constraint on partner's hand (named rule from the system file) |
 | `-s seed` | RNG seed for reproducibility (default: time-based) |
 | `-L level` | Log level: `error`\|`warning`\|`info`\|`debug` (default `info`) |
-| `--rules-only` | Stop each auction the moment no rule matches, instead of calling `suggestContract()`. No simulation is run for the guess step; `Bidding`/`Contract`/`Score`/`IMPs vs Par` columns are omitted and no end-of-run summary is logged. Par Bid/Par Score (from the per-deal SDA) are unaffected. |
+| `--rules-only` | Stop each auction the moment no rule matches, instead of calling `suggestContract()`. No simulation is run for the guess step; `Bidding`/`Contract`/`Score`/`IMPs vs Par` columns are omitted and no end-of-run summary is logged. The per-deal SDA that computes `Par Bid`/`Par Score` is also skipped, and those columns are omitted too — this is the more expensive of the two simulations, so `--rules-only` runs are correspondingly faster. |
+| `--validate` | Check each `-i` system's rule tree offline for authoring mistakes instead of dealing/bidding — see [System Validation](#system-validation---validate-mode) below. No `reps`/rule args, `-o`, `-b`, `-v`, or `-nchecks` are needed; the run never reaches deal generation. |
 
 Positional arguments after options:
 - `reps` — number of deals to process
@@ -146,6 +147,40 @@ divided by `totHandsToCheck` to give an expected value.
 
 ---
 
+## System Validation (`--validate` mode)
+
+`--validate` walks each `-i` system's convention tree offline — no deals, no DDS,
+no CSV output — and flags likely rule-authoring mistakes at every decision point
+(a tree node with 2+ children). It never reaches `createDeal()`/`bidHand()`;
+`main()` runs `validateSystem()` for each system and returns immediately after.
+
+For each decision point it samples random hands satisfying the precondition
+needed to reach that point (reconstructed the same way the live auction builds
+`rules[bidder]`: `combineRule`-accumulating that seat's own rules along their
+own turns, tracked as two independent North/South accumulators since the two
+seats' rules are never combined with each other), up to `VALIDATE_TARGET_SAMPLES`
+(3000) matching hands or `VALIDATE_MAXTRIES` (2,000,000) attempts, and reports:
+
+| Finding | Meaning |
+|---------|---------|
+| `OVERLAP` | More than one sibling's rule matches the same sampled hand. `findMatchingChild()`'s first-match-wins silently picks one at runtime — this makes the resulting ambiguity visible to the rules author instead. |
+| `GAP` | No sibling matches a reachable hand. At runtime this falls through to `suggestContract()`'s simulated guess instead of an authored bid. |
+| `UNREACHABLE` | No sampled hand satisfies the path leading to this node at all after `VALIDATE_MAXTRIES` tries — usually dead code, because an ancestor rule already rules it out. Recursion stops below an unreachable node, since nothing under it is reachable either. |
+| `DUPLICATE` | Two siblings have byte-identical rule text — almost always a copy-paste mistake, and free to detect (no sampling needed). |
+
+`findMatchingChild()` (the sibling-matching logic) is shared verbatim between
+the live auction (`nextBid()`) and `--validate`'s tree walk, so the two can
+never disagree about what "reachable"/"matches" means.
+
+Findings are logged as `[validate] OVERLAP/GAP/UNREACHABLE/DUPLICATE at <path>: ...`
+warnings (an empty path means the opening bid), each with a sample offending
+hand and, for `OVERLAP`, the names of the tied siblings. A one-line summary per
+system (`decisionPoint`/`overlap`/`gap`/`unreachable`/`duplicate-text` counts)
+is logged at the end. `--validate` always exits 0 — it's a diagnostic report,
+not a pass/fail gate; a nonzero-findings run isn't treated as a build failure.
+
+---
+
 ## Data Flow
 
 ```
@@ -169,7 +204,7 @@ output/
 | Vul | `N` (not vulnerable) or `V` (NS vulnerable) |
 | N Pts, N Ctls, N KC S/H/D/C, N S/H/D/C | North hand summary |
 | S Pts … S shape | South hand summary |
-| Par Bid, Par Score | Single-dummy par contract and expected score |
+| Par Bid, Par Score | Single-dummy par contract and expected score; omitted entirely under `--rules-only` (the SDA that computes them isn't run) |
 | Auction X | Auction so far when `suggestContract()` was invoked for system X, or the whole final auction if a rule ended it naturally without ever guessing. Under `--rules-only`, this is the only per-system column, since every auction is treated as incomplete. |
 | Bidding X, Contract X, Score X, IMPs vs Par X | Per-system columns (one set per `-i` file); omitted entirely under `--rules-only` |
 

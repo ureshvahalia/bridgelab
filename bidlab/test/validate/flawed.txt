@@ -1,0 +1,21 @@
+## Deliberately flawed system exercising all four --validate finding types.
+$Any := (Points >= 0);
+
+## OVERLAP (both match hands with Points >= 12) and GAP (neither matches
+## hands with Points < 10) at the root decision point.
+$.1C. := (Points >= 12);
+$.1D. := (Points >= 10);
+
+## DUPLICATE: byte-identical rule text on two siblings (also root decision
+## point; also an OVERLAP wherever both are true, since they're identical).
+$.1H. := (Points >= 6) AND (Hearts >= 5);
+$.1S. := (Points >= 6) AND (Hearts >= 5);
+
+## UNREACHABLE: $.1N. is an impossible opener (Points can't be both >= 12
+## and <= 10). Nothing under it -- specifically the "1N-2C" decision point,
+## which is checked against North's accumulated rule chain including $.1N.
+## itself -- can ever be reached.
+$.1N. := (Points >= 12) AND (Points <= 10);
+$.1N.2C. := (Points >= 0);
+$.1N.2C.2D. := (Points >= 0)
+END

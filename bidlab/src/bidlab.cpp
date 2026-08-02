@@ -39,6 +39,7 @@ static constexpr LONGLONG MICROSECONDS_PER_SECOND = 1000000LL;
 static void upcase_str (char* s) { for (; *s; s++) *s = toupper((unsigned char)*s); }
 
 static bool rulesOnlyMode = false;   // --rules-only: stop at the first unmatched rule, no simulation/guessing
+static bool validateMode  = false;   // --validate: check a system's rule tree for overlaps/gaps/dead rules, don't deal
 
 class funcStats {
     char    name[MAXNAMELEN];
@@ -181,6 +182,38 @@ convention::convention (convention* parent, bid inb, void* r)
             c = c->nextSibling();
         c->sibling = this;
     }
+}
+
+// Finds the first child of `node` whose rule matches `hand`, falling back to
+// rootSysp's children if nothing at `node` matches and every real call so
+// far in this auction was Pass. Every "$."-rule's path is built from the
+// tree root (see biddingSystem::processRule), so a rule written as a bare
+// opening (e.g. "$.1N.") only lives at the root and is never a child of
+// "$.P." unless the file also spells out "$.P.1N.". When nothing but passes
+// precede this point, retrying against the root's children is what makes
+// third/fourth-hand openers fall back to the same requirements as a
+// first-hand opener unless the rules file explicitly overrides them with
+// its own "$.P...." rule (which, being found above, always takes priority
+// over this fallback). Returns NULL if nothing matches even after that.
+//
+// Shared by the live auction (nextBid()) and --validate's offline tree
+// walk, so the two can never disagree about what "reachable"/"matches" mean.
+static convention*
+findMatchingChild (convention* node, convention* rootSysp, bool allPassSoFar, handBase& hand)
+{
+    for (convention* s = node->firstChild (); s != NULL; s = s->nextSibling ()) {
+        void* rule = s->getRule ();
+        if ((rule != NULL) && hand.checkHand (rule))
+            return s;
+    }
+    if (allPassSoFar && (node != rootSysp))    {
+        for (convention* s = rootSysp->firstChild (); s != NULL; s = s->nextSibling ()) {
+            void* rule = s->getRule ();
+            if ((rule != NULL) && hand.checkHand (rule))
+                return s;
+        }
+    }
+    return NULL;
 }
 
 const char*
@@ -346,16 +379,16 @@ vulForBoard (int bno)   // bno is 1-based
     return boardVulCycle[(bno - 1) % 16];
 }
 
-class auction  {
-    static constexpr bidName bidNames[] = { "ER", "ER", "ER", "ER", "P",
-                                        "1C", "1D", "1H", "1S", "1N",
-                                        "2C", "2D", "2H", "2S", "2N",
-                                        "3C", "3D", "3H", "3S", "3N",
-                                        "4C", "4D", "4H", "4S", "4N",
-                                        "5C", "5D", "5H", "5S", "5N",
-                                        "6C", "6D", "6H", "6S", "6N",
-                                        "7C", "7D", "7H", "7S", "7N" };
+static constexpr bidName bidNames[] = { "ER", "ER", "ER", "ER", "P",
+                                    "1C", "1D", "1H", "1S", "1N",
+                                    "2C", "2D", "2H", "2S", "2N",
+                                    "3C", "3D", "3H", "3S", "3N",
+                                    "4C", "4D", "4H", "4S", "4N",
+                                    "5C", "5D", "5H", "5S", "5N",
+                                    "6C", "6D", "6H", "6S", "6N",
+                                    "7C", "7D", "7H", "7S", "7N" };
 
+class auction  {
     aHand       hands[NHANDS];
     void*       rules[NHANDS];
     int         bidder;
@@ -462,30 +495,7 @@ auction::nextBid ()
     if (sysp == NULL)
         bidVal = considerOverride ();
     else    {
-        convention* s;
-        for (s = sysp->firstChild (); s != NULL; s = s->nextSibling ()) {
-            void* rule = s->getRule();
-            if ((rule != NULL) && hands[bidder].checkHand (rule))    // Found matching rule
-                break;
-        }
-        if ((s == NULL) && allPassSoFar && (sysp != rootSysp))    {
-            // Every "$."-rule's path is built from the tree root (see
-            // biddingSystem::processRule), so a rule written as a bare
-            // opening (e.g. "$.1N.") only lives at the root and is never a
-            // child of "$.P." unless the file also spells out "$.P.1N.".
-            // When nothing but passes precede this call, retry the same
-            // hand against the root's children (the fresh-opener rules)
-            // before giving up -- this is what makes third/fourth-hand
-            // openers fall back to the same requirements as a first-hand
-            // opener unless the rules file explicitly overrides them with
-            // its own "$.P...." rule (which, being found above, always
-            // takes priority over this fallback).
-            for (s = rootSysp->firstChild (); s != NULL; s = s->nextSibling ()) {
-                void* rule = s->getRule();
-                if ((rule != NULL) && hands[bidder].checkHand (rule))
-                    break;
-            }
-        }
+        convention* s = findMatchingChild (sysp, rootSysp, allPassSoFar, hands[bidder]);
         if (s == NULL)  {   // No matching rule found. Take a guess at best contract
             guessWasCalled = true;
             snprintf (guessPointBidStr, sizeof (guessPointBidStr), "%s", bidStr);
@@ -571,8 +581,11 @@ auction::writeHandInfo ()
     *cp++ = ',';
     cp = hands[0].writeSummary (cp);
     cp = hands[2].writeSummary (cp);
-    sprintf (cp, "%s - %c,%d,", bidNames[bestContract],
-             (bestBy == 0) ? 'N' : 'S', bestScore);
+    if (rulesOnlyMode)
+        *cp = 0;   // no par computed; nothing to append
+    else
+        sprintf (cp, "%s - %c,%d,", bidNames[bestContract],
+                 (bestBy == 0) ? 'N' : 'S', bestScore);
     fprintf (oh, "%s", s);
 
     if (bboFp && *dealLIN)
@@ -603,8 +616,9 @@ auction::writeHeaders (systemNamep* systemNames)
 {
     fprintf (oh, "Hand,Vul,"
                  "N Pts,N Ctls,N KC S,N KC H,N KC D,N KC C,N S,N H,N D,N C,N pattern,N shape,"
-                 "S Pts,S Ctls,S KC S,S KC H,S KC D,S KC C,S S,S H,S D,S C,S pattern,S shape,"
-                 "Par Bid,Par Score,");
+                 "S Pts,S Ctls,S KC S,S KC H,S KC D,S KC C,S S,S H,S D,S C,S pattern,S shape,");
+    if (!rulesOnlyMode)
+        fprintf (oh, "Par Bid,Par Score,");
     for (systemNamep* snpp = systemNames; snpp < systemNames + numSystems; snpp++)   {
         if (rulesOnlyMode)
             fprintf (oh, "Auction %s,", *snpp);
@@ -786,13 +800,13 @@ auction::createDeal (char* pbnStr)
         logError ("Error saving known hands\n");
         return false;
     }
-    runSimulation(&totScores, &deal, true, v);
-
     bidder = 0;
-    if (detailh)
-        writeDetails (detailh, true, &totScores, "Par");
-
-    setSDAPar ();
+    if (!rulesOnlyMode)  {   // Par requires the full-hand SDA; skip it when only checking rule coverage
+        runSimulation(&totScores, &deal, true, v);
+        if (detailh)
+            writeDetails (detailh, true, &totScores, "Par");
+        setSDAPar ();
+    }
     writeHandInfo ();
     return true;
 }
@@ -801,6 +815,196 @@ bid
 auction::considerOverride ()
 {
     return bidPass;
+}
+
+// ── System validation (--validate mode) ────────────────────────────────────
+//
+// Walks a bidding system's convention tree offline (no live auction, no
+// DDS) and flags likely rule-authoring mistakes at every decision point (a
+// tree node with 2+ children):
+//   OVERLAP     more than one sibling's rule can match the same hand --
+//               findMatchingChild()'s first-match-wins silently picks one
+//               and hides the ambiguity from the rules writer.
+//   GAP         no sibling matches -- the live auction would silently fall
+//               through to suggestContract()'s simulated guess.
+//   UNREACHABLE nothing satisfies the path leading to this node at all --
+//               likely dead code, usually because an ancestor rule already
+//               rules it out.
+//   DUPLICATE   two siblings have byte-identical rule text -- almost
+//               always a copy-paste mistake, and free to catch (no
+//               sampling needed).
+//
+// Reachability sampling reconstructs the exact precondition nextBid()
+// builds live: rules[bidder] accumulates only that bidder's own rules
+// across their own turns (see bidHand()/nextBid()), so this walk keeps two
+// separate accumulators, one per seat, each combined in only on that
+// seat's own tree depth (odd depths are North's own bids, even depths
+// South's -- see initializeBidding(): bidder starts at posNorth and
+// alternates via nextBidder()).
+enum { VALIDATE_TARGET_SAMPLES = 3000, VALIDATE_MAXTRIES = 2000000 };
+
+struct validateStats {
+    int decisionPoints;
+    int overlaps;
+    int gaps;
+    int unreachable;
+    int duplicates;
+};
+
+static void
+reportDuplicateSiblings (convention* node, const char* pathStr, validateStats* stats)
+{
+    for (convention* a = node->firstChild (); a != NULL; a = a->nextSibling ())    {
+        void* ra = a->getRule ();
+        if (ra == NULL)
+            continue;
+        for (convention* b = a->nextSibling (); b != NULL; b = b->nextSibling ())    {
+            void* rb = b->getRule ();
+            if ((rb != NULL) && (strcmp (((TPTR)ra)->t_desc, ((TPTR)rb)->t_desc) == 0))    {
+                logWarning ("[validate] DUPLICATE at %s: %s and %s use identical rule text \"%s\"\n",
+                            pathStr, bidNames[a->thisBid ()], bidNames[b->thisBid ()], ((TPTR)ra)->t_desc);
+                stats->duplicates++;
+            }
+        }
+    }
+}
+
+// Samples hands satisfying `precondition` (the reachability requirement for
+// `node`'s own bidder to have gotten here) and, for each one, counts how
+// many of `node`'s children match. Returns false if nothing satisfies
+// `precondition` after VALIDATE_MAXTRIES tries -- callers should prune
+// recursion below an unreachable node, since nothing under it is reachable
+// either.
+static bool
+checkDecisionPoint (convention* node, convention* rootSysp, bool allPassSoFar,
+                     void* precondition, const char* pathStr, validateStats* stats)
+{
+    stats->decisionPoints++;
+    const char* label = *pathStr ? pathStr : "(opening)";
+    reportDuplicateSiblings (node, label, stats);
+
+    aHand hand;
+    int reachable = 0, overlapHits = 0, gapHits = 0, tries;
+    char overlapExample[LINE_LENGTH] = "";
+    char overlapBids[MAXNAMELEN] = "";
+    char gapExample[LINE_LENGTH] = "";
+
+    for (tries = 0; tries < VALIDATE_MAXTRIES; tries++)    {
+        thePack.reshuffle ();
+        hand.deal ();
+        if (!hand.checkHand (precondition))
+            continue;
+        reachable++;
+        int matches = 0;
+        for (convention* c = node->firstChild (); c != NULL; c = c->nextSibling ())
+            if ((c->getRule () != NULL) && hand.checkHand (c->getRule ()))
+                matches++;
+        if (matches == 0)    {
+            // Not a genuine gap if the third/fourth-hand-opener fallback
+            // (see findMatchingChild()) would rescue this hand at runtime.
+            if (findMatchingChild (node, rootSysp, allPassSoFar, hand) == NULL)    {
+                gapHits++;
+                if (!*gapExample)
+                    writePbnHand (gapExample, hand.getHand (), NULL, NULL, NULL);
+            }
+        } else if (matches >= 2)    {
+            overlapHits++;
+            if (!*overlapExample)    {
+                writePbnHand (overlapExample, hand.getHand (), NULL, NULL, NULL);
+                // Re-scan (cheap: only happens once per decision point) to
+                // name which siblings tied for this example hand.
+                for (convention* c = node->firstChild (); c != NULL; c = c->nextSibling ())
+                    if ((c->getRule () != NULL) && hand.checkHand (c->getRule ()))    {
+                        size_t len = strlen (overlapBids);
+                        snprintf (overlapBids + len, sizeof (overlapBids) - len,
+                                  "%s%s", len ? ", " : "", bidNames[c->thisBid ()]);
+                    }
+            }
+        }
+        if (reachable >= VALIDATE_TARGET_SAMPLES)
+            break;
+    }
+
+    if (reachable == 0)    {
+        logWarning ("[validate] UNREACHABLE at %s: no hand satisfies the path here after %d tries\n",
+                    label, tries);
+        stats->unreachable++;
+        return false;
+    }
+    if (overlapHits > 0)    {
+        logWarning ("[validate] OVERLAP at %s: %d/%d sampled hands (%.1f%%) match more than one option (%s), e.g. %s\n",
+                    label, overlapHits, reachable, 100.0 * overlapHits / reachable, overlapBids, overlapExample);
+        stats->overlaps++;
+    }
+    if (gapHits > 0)    {
+        logWarning ("[validate] GAP at %s: %d/%d sampled hands (%.1f%%) match no option, e.g. %s\n",
+                    label, gapHits, reachable, 100.0 * gapHits / reachable, gapExample);
+        stats->gaps++;
+    }
+    return true;
+}
+
+// combineRule() itself assumes both operands are non-NULL (write_node()'s
+// TAND case dereferences both sides' t_desc unconditionally) -- safe in the
+// live auction because rules[bidder] is seeded from $ANY, which every rules
+// file is expected to define. --validate can't rely on that convention, so
+// treat a NULL side as "no constraint" (matching checkHand(NULL)'s own
+// semantics) instead of ever calling combineRule() with one.
+static void*
+combineRuleSafe (void* acc, void* rule)
+{
+    if (rule == NULL)
+        return acc;
+    if (acc == NULL)
+        return rule;
+    return combineRule (acc, rule);
+}
+
+static void
+walkValidate (convention* node, convention* rootSysp, int depth,
+              void* northAcc, void* southAcc, bool allPassSoFar,
+              const char* pathStr, validateStats* stats)
+{
+    if (depth > 0)    {
+        if (node->thisBid () != bidPass)
+            allPassSoFar = false;
+        // A node with no rule of its own is a pure path waypoint -- it
+        // exists only because some deeper "$."-sequence uses it as a
+        // prefix (see biddingSystem::processRule), never because it was
+        // itself matched against a hand. Unlike the live auction (which
+        // only ever combines in a *matched* child's rule -- see
+        // findMatchingChild()), this walk visits every node structurally,
+        // so combineRuleSafe() (rather than combineRule() directly) treats
+        // a NULL rule here as "no additional constraint".
+        if (depth % 2 == 1)   // odd depth: North's own bid/rule
+            northAcc = combineRuleSafe (northAcc, node->getRule ());
+        else                  // even depth: South's own bid/rule
+            southAcc = combineRuleSafe (southAcc, node->getRule ());
+    }
+    if (node->firstChild () == NULL)
+        return;   // leaf -- nothing to validate below it
+
+    bool childIsNorth = (depth % 2 == 0);   // depth+1 parity
+    void* childPrecondition = childIsNorth ? northAcc : southAcc;
+    if (!checkDecisionPoint (node, rootSysp, allPassSoFar, childPrecondition, pathStr, stats))
+        return;   // unreachable -- nothing below here is reachable either
+
+    for (convention* c = node->firstChild (); c != NULL; c = c->nextSibling ())    {
+        char childPath[MAXNAMELEN];
+        snprintf (childPath, sizeof (childPath), "%s%s%s", pathStr, *pathStr ? "-" : "", bidNames[c->thisBid ()]);
+        walkValidate (c, rootSysp, depth + 1, northAcc, southAcc, allPassSoFar, childPath, stats);
+    }
+}
+
+static void
+validateSystem (biddingSystem* sys, const char* sysName)
+{
+    validateStats stats = { 0, 0, 0, 0, 0 };
+    void* anyRule = sys->findRule ("$ANY");   // mirrors bidHand()'s initial rules[bidder] reset
+    logInfo ("Validating system %s...\n", sysName);
+    walkValidate (sys, sys, 0, anyRule, anyRule, true, "", &stats);
+    logInfo ("System %s: %d decision point(s), %d overlap, %d gap, %d unreachable, %d duplicate-text\n",
+             sysName, stats.decisionPoints, stats.overlaps, stats.gaps, stats.unreachable, stats.duplicates);
 }
 
 static char inFileList[PATH_MAX];
@@ -831,6 +1035,11 @@ main (int argc, char** argv)
     while ((i < argc) && (*argv[i] == '-')) {
         if (strcmp (argv[i], "--rules-only") == 0)    {
             rulesOnlyMode = true;
+            i += 1;
+            continue;
+        }
+        if (strcmp (argv[i], "--validate") == 0)    {
+            validateMode = true;
             i += 1;
             continue;
         }
@@ -910,17 +1119,19 @@ main (int argc, char** argv)
         perror ("chdir");
         exit (1);
     }
-    oh = fopen (output, "w");
-    if (oh == NULL)   {
-        logError ("Failed to open output%s", output);
-        perror ("fopen");
-        exit (1);
-    }
-    bboFp = fopen (bboFile, "w");
-    if (bboFp == NULL)   {
-        logError ("Failed to open %s", bboFile);
-        perror ("fopen");
-        exit (1);
+    if (!validateMode)  {
+        oh = fopen (output, "w");
+        if (oh == NULL)   {
+            logError ("Failed to open output%s", output);
+            perror ("fopen");
+            exit (1);
+        }
+        bboFp = fopen (bboFile, "w");
+        if (bboFp == NULL)   {
+            logError ("Failed to open %s", bboFile);
+            perror ("fopen");
+            exit (1);
+        }
     }
     if (*pbnFile)   {
         pbnh = fopen (pbnFile, "r");
@@ -930,7 +1141,7 @@ main (int argc, char** argv)
             exit (1);
         }
     }
-    if (*detailFile)    {
+    if (!validateMode && *detailFile)    {
         detailh = fopen (detailFile, "w");
         if (detailh == NULL)   {
             logError ("Failed to open %s", detailFile);
@@ -965,6 +1176,12 @@ main (int argc, char** argv)
         inFile = fileEnd ? fileEnd + 1 : NULL;
     } while (fileEnd != NULL);
     assert (s == (systemsList + numSystems));
+
+    if (validateMode)   {
+        for (int vi = 0; vi < numSystems; vi++)
+            validateSystem (systemsList[vi], systemNames[vi]);
+        return 0;
+    }
 
     impSum = new int[numSystems]();
     parMatches = new int[numSystems]();

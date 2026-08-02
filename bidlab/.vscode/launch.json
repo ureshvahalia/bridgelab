@@ -48,6 +48,53 @@
                     "ignoreFailures": true
                 }
             ]
+        },
+        {
+            "name": "Validate bidlab systems",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/msys2/Debug/bidlab.exe",
+            // --validate checks each -i system's rule tree for overlaps/gaps/
+            // unreachable rules/duplicate text and exits -- no reps/rule args,
+            // -o, or -nchecks needed; it never gets that far.
+            "args": [ "-i", "input/UreshJay.txt", "--validate" ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+            "preLaunchTask": "Build Debug",  // This forces make before running
+            "logging": {
+                "engineLogging": false,
+                "trace": false,
+                "traceResponse": false,
+                "programOutput": true,
+                "moduleLoad": false,
+                "exceptions": false
+            },
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Disable pagination",
+                    "text": "set pagination off",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Disable thread messages",
+                    "text": "set print thread-events off",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Disable shared library messages",
+                    "text": "set print symbol-loading off",
+                    "ignoreFailures": true
+                }
+            ]
         }
     ]
 }

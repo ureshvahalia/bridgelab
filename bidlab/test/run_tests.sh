@@ -137,6 +137,22 @@ for badfile in anchor_violation bmaj_unparenthesized bmaj_as_bid_token; do
     fi
 done
 
+# Body-side reference to a Maj/Min-forked bid-sequence name (e.g. "$.2Major."
+# inside another rule's body, not its own name) must expand to a
+# parenthesized OR of the concrete forks -- see hand-spec.md's "Referencing
+# a Maj/Min-forked bid-sequence name from another rule's body".
+rm -f majmin/bidseq_reference.txt.expanded.txt
+"$BIDDER" -i majmin/bidseq_reference.txt -o majmin/bidseq_reference.csv -nchecks 4 1 Any Any >/dev/null 2>majmin/bidseq_reference.stderr || true
+if grep -vE '^\[(INFO|DEBUG)\]' majmin/bidseq_reference.stderr | grep -q .; then
+    echo "Maj/Min regression test FAILED: unexpected stderr output for majmin/bidseq_reference.txt:"
+    cat majmin/bidseq_reference.stderr
+    MAJMIN_OK=0
+fi
+if ! diff --strip-trailing-cr -u majmin/expected_bidseq_reference_expanded.txt majmin/bidseq_reference.txt.expanded.txt; then
+    echo "Maj/Min regression test FAILED: bidseq_reference.txt expanded output does not match expected_bidseq_reference_expanded.txt"
+    MAJMIN_OK=0
+fi
+
 if [ "$MAJMIN_OK" -eq 1 ]; then
     echo "Maj/Min regression test PASSED"
 else
@@ -216,6 +232,62 @@ fi
 
 if [ "$ANDOR_OK" -eq 1 ]; then
     echo "andor regression test PASSED"
+else
+    exit 1
+fi
+
+# ── System validation (--validate) checks ──────────────────────────────────────
+# See validate/. clean.txt has one decision point that exhaustively and
+# exclusively partitions every hand -- --validate should report zero
+# findings. flawed.txt deliberately exercises all four finding types in one
+# small file (see the comments in validate/flawed.txt for exactly how each
+# one is constructed). -s 0 makes the sampled counts/paths deterministic, so
+# both the finding lines and the final per-system summary line are asserted
+# exactly, not just their presence.
+VALIDATE_OK=1
+
+"$BIDDER" -s 0 -i validate/clean.txt --validate >validate/clean.stdout 2>validate/clean.stderr
+CLEAN_EXIT=$?
+if [ "$CLEAN_EXIT" -ne 0 ]; then
+    echo "validate regression test FAILED: clean.txt --validate should exit 0, got $CLEAN_EXIT"
+    VALIDATE_OK=0
+fi
+if grep -q '\[WARN\]' validate/clean.stderr; then
+    echo "validate regression test FAILED: clean.txt --validate produced unexpected warning(s):"
+    cat validate/clean.stderr
+    VALIDATE_OK=0
+fi
+if ! grep -q '1 decision point(s), 0 overlap, 0 gap, 0 unreachable, 0 duplicate-text' validate/clean.stderr; then
+    echo "validate regression test FAILED: clean.txt --validate summary line did not match the expected all-zero counts:"
+    cat validate/clean.stderr
+    VALIDATE_OK=0
+fi
+
+"$BIDDER" -s 0 -i validate/flawed.txt --validate >validate/flawed.stdout 2>validate/flawed.stderr
+FLAWED_EXIT=$?
+if [ "$FLAWED_EXIT" -ne 0 ]; then
+    echo "validate regression test FAILED: flawed.txt --validate should exit 0 (findings are warnings, not errors), got $FLAWED_EXIT"
+    VALIDATE_OK=0
+fi
+for expected in \
+    'DUPLICATE at (opening): 1H and 1S use identical rule text' \
+    'OVERLAP at (opening):' \
+    'GAP at (opening):' \
+    'UNREACHABLE at 1N-2C: no hand satisfies the path here'
+do
+    if ! grep -qF "$expected" validate/flawed.stderr; then
+        echo "validate regression test FAILED: flawed.txt --validate did not report: $expected"
+        VALIDATE_OK=0
+    fi
+done
+if ! grep -q '3 decision point(s), 1 overlap, 1 gap, 1 unreachable, 1 duplicate-text' validate/flawed.stderr; then
+    echo "validate regression test FAILED: flawed.txt --validate summary line did not match the expected counts:"
+    cat validate/flawed.stderr
+    VALIDATE_OK=0
+fi
+
+if [ "$VALIDATE_OK" -eq 1 ]; then
+    echo "validate regression test PASSED"
 else
     exit 1
 fi

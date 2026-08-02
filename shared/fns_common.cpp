@@ -161,6 +161,27 @@ static int club_len (handBase* ah, int )      { return suit_len (ah, CLUBS); }
 static int get_controls (handBase* ah, int )  { return ah->get_controls(); }
 static int key_cards (handBase* ah, int suit) { return ah->getKeyCards (suit); }
 
+// New Losing Trick Count (Koelman 2003 / popularized by Klinger as "NLTC"),
+// doubled to stay integer: missing Ace = 3, missing King = 2, missing Queen
+// = 1 (i.e. 1.5/1.0/0.5 real losers each, x2). Divide by 2 in the rules file
+// to get the conventional half-integer value. haveCard() is virtual and
+// returns false unconditionally for partnerHand (never overridden there —
+// see handInfo.hpp), so on a partnership rule this silently comes out to
+// the worst-case value for the combined suit lengths, exactly like the
+// existing Sa/Sk/Sq spot-card keywords; no special-casing needed here.
+static int
+get_nltc (handBase* ah, int )
+{
+    int losers2 = 0;
+    for (int suit = 0; suit < NSUITS; suit++)  {
+        int len = ah->suitLen (suit);
+        if ((len >= 1) && !ah->haveCard (ACE   + suit * NCARDS_IN_SUIT)) losers2 += 3;
+        if ((len >= 2) && !ah->haveCard (KING  + suit * NCARDS_IN_SUIT)) losers2 += 2;
+        if ((len >= 3) && !ah->haveCard (QUEEN + suit * NCARDS_IN_SUIT)) losers2 += 1;
+    }
+    return losers2;
+}
+
 static int
 suit_pts (handBase* ah, int suit)
 {
@@ -194,6 +215,7 @@ static const funcDesc kword_fn_list[] = {
 	{"DIAMONDS",  diamond_len},
 	{"CLUBS",     club_len},
 	{"CONTROLS",  get_controls},
+	{"NLTC",      get_nltc},
 	{0, 0}
 };
 

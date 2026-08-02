@@ -310,7 +310,7 @@ $.1C.1D.1N.3N. := (4 TO 6 Points) AND $noMajor4 ;
 ## 3X = solid suit; 3N = to play
 ## ============================================================
 
-$.1C.1N.2C. := (Clubs >= 5) AND (Hearts < 5) AND (Spades < 5) AND NOT $balanced ;
+$.1C.1N.2C. := (Clubs >= 5) AND (Hearts < 5) AND (Spades < 5) AND (Diamonds < 5) AND NOT $balanced ;
 $.1C.1N.2D. := (Diamonds >= 5) AND (Hearts < 5) AND (Spades < 5) AND NOT $balanced ;
 $.1C.1N.2H. := (Hearts >= 5) AND NOT $balanced ;
 $.1C.1N.2S. := (Spades >= 5) AND (Hearts < 5) AND NOT $balanced ;

@@ -24,6 +24,8 @@ test/majmin/*.csv
 test/majmin/*.stderr
 test/andor/*.csv
 test/andor/*.stderr
+test/validate/*.stdout
+test/validate/*.stderr
 
 # Release packaging artefacts
 Package/

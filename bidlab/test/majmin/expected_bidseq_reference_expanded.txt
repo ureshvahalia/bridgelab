@@ -1,0 +1,9 @@
+$Any := (Points >= 0);
+$.2S. := (5 TO 10 Points) AND (Spades ?= 6) AND (Hearts < 4);
+$.2H. := (5 TO 10 Points) AND (Hearts ?= 6) AND (Spades < 4);
+$.3D. := (5 TO 10 Points) AND (Diamonds ?= 7) AND (Clubs < 4);
+$.3C. := (5 TO 10 Points) AND (Clubs ?= 7) AND (Diamonds < 4);
+$.3S. := (5 TO 10 Points) AND (Spades >= 7) AND (Hearts < 4);
+$.3H. := (5 TO 10 Points) AND (Hearts >= 7) AND (Spades < 4);
+$.P. := (Points < 11) AND NOT (($.2S. OR $.2H.) OR ($.3D. OR $.3C.) OR ($.3S. OR $.3H.));
+END

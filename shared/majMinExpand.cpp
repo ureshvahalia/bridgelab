@@ -461,6 +461,91 @@ std::string substituteNameTokens (const std::vector<BidNameToken>& tokens, Suit 
     return out;
 }
 
+// ── Bid-sequence reference expansion (body-side "$.<macro>." references) ──
+
+// Scans `body` for "$"-prefixed references. A reference that is bid-
+// sequence-shaped (analyzeBidName succeeds) AND contains at least one
+// Maj/Min-family placeholder token is replaced with a parenthesized OR of
+// every concrete rule name it forks into — the same choice-enumeration a
+// "$."-name's own definition uses (see the generation loop in
+// expandMajMinMacros). E.g. a reference to "$.2Major." (assuming
+// $.2Major. := ... itself expands into $.2H./$.2S., as in the "$.1Maj."
+// example in hand-spec.md) becomes "($.2H. OR $.2S.)".
+//
+// Anchor order (Maj before OMaj, Min before OMin) is checked self-contained
+// to the reference's own tokens only — a reference can't borrow an anchor
+// established elsewhere in the surrounding rule (its name, or an unrelated
+// earlier body occurrence). Letting it do so would mean a reference's
+// meaning depends on text nowhere near it: the same three characters could
+// be valid in one rule and undefined in another, purely because of how the
+// *enclosing* rule happens to establish Maj/Min elsewhere. Requiring the
+// anchor within the reference itself keeps a reference's meaning readable
+// from the reference alone, and mirrors the existing rule for a freshly
+// *defined* "$."-name (hand-spec.md: "the first occurrence of the pair must
+// be Maj/Major"): a reference is held to exactly the same requirement a
+// definition already is.
+//
+// An ordinary reference (not bid-sequence-shaped, e.g. "$balanced") or an
+// already-concrete bid-sequence reference (e.g. "$.1N.2C.2H.", no macro
+// token) is left untouched — identical to how findNextKeywordWord's own
+// "$" skip already treats both today.
+std::string expandBidSequenceReferences (const std::string& body, const std::string& ruleLabel)
+{
+    std::string result;
+    size_t i = 0, n = body.size();
+    while (i < n) {
+        if (body[i] != '$') {
+            result += body[i++];
+            continue;
+        }
+        size_t start = i;
+        i++;
+        while (i < n && isDefNameChar (body[i]))
+            i++;
+        std::string ref = body.substr (start, i - start);
+
+        std::vector<BidNameToken> tokens;
+        bool isBidSeq = analyzeBidName (ref, tokens);
+        bool hasMajor = false, hasMinor = false;
+        if (isBidSeq)
+            for (const auto& t : tokens) {
+                if (isMajorPair (t.placeholder)) hasMajor = true;
+                if (isMinorPair (t.placeholder)) hasMinor = true;
+            }
+        if (!isBidSeq || (!hasMajor && !hasMinor)) {
+            result += ref;   // ordinary reference, or already concrete -- untouched
+            continue;
+        }
+
+        bool majSeen = false, minSeen = false;
+        for (const auto& t : tokens) {
+            if (t.placeholder == KW_MAJ)       majSeen = true;
+            else if (t.placeholder == KW_MIN)  minSeen = true;
+            else if (t.placeholder == KW_OMAJ && !majSeen)
+                fatal ("OMAJ/OMAJOR used before a preceding MAJ/MAJOR in reference " + ref +
+                       " (rule " + ruleLabel + ") — a reference's OMAJ/OMAJOR must be anchored "
+                       "by a MAJ/MAJOR within that same reference, not elsewhere in the rule");
+            else if (t.placeholder == KW_OMIN && !minSeen)
+                fatal ("OMIN/OMINOR used before a preceding MIN/MINOR in reference " + ref +
+                       " (rule " + ruleLabel + ") — a reference's OMIN/OMINOR must be anchored "
+                       "by a MIN/MINOR within that same reference, not elsewhere in the rule");
+        }
+
+        std::vector<Suit> majChoices = hasMajor ? std::vector<Suit>{ SPADES, HEARTS }   : std::vector<Suit>{ SUIT_NONE };
+        std::vector<Suit> minChoices = hasMinor ? std::vector<Suit>{ DIAMONDS, CLUBS } : std::vector<Suit>{ SUIT_NONE };
+        std::vector<std::string> variants;
+        for (Suit majN : majChoices)
+            for (Suit minN : minChoices)
+                variants.push_back (substituteNameTokens (tokens, majN, minN));
+
+        result += "(" + variants[0];
+        for (size_t k = 1; k < variants.size(); k++)
+            result += " OR " + variants[k];
+        result += ")";
+    }
+    return result;
+}
+
 // ── Bid-sequence legality (ascending rank; Pass exempt) ────────────────────
 
 bool isLegalBidSequence (const std::vector<BidNameToken>& tokens)
@@ -514,10 +599,16 @@ std::string expandMajMinMacros (const std::string& rawText, const char* inFile)
             continue;
         }
 
+        // Resolve any "$.<macro>." bid-sequence references in the body first,
+        // so everything below (anchor check, bare-keyword body detection/
+        // substitution) sees only concrete "$Name" references, exactly as
+        // it always has -- it never needs to know this step ran.
+        std::string body = expandBidSequenceReferences (stmt.body, stmt.name);
+
         std::vector<BidNameToken> nameTokens;
         bool nameIsBidSequence = analyzeBidName (stmt.name, nameTokens);
 
-        checkAnchorOrder (stmt.name, stmt.name, nameTokens, nameIsBidSequence, stmt.body);
+        checkAnchorOrder (stmt.name, stmt.name, nameTokens, nameIsBidSequence, body);
 
         bool majorInName = false, minorInName = false;
         if (nameIsBidSequence)
@@ -530,7 +621,7 @@ std::string expandMajMinMacros (const std::string& rawText, const char* inFile)
         {
             size_t pos = 0;
             KeywordHit hit;
-            while (findNextKeywordWord (stmt.body, pos, hit)) {
+            while (findNextKeywordWord (body, pos, hit)) {
                 if (isMajorPair (hit.kind)) majorInBody = true;
                 if (isMinorPair (hit.kind)) minorInBody = true;
                 pos = hit.pos + hit.len;
@@ -556,7 +647,7 @@ std::string expandMajMinMacros (const std::string& rawText, const char* inFile)
                     for (Suit minB : minorBodyChoices) {
                         Suit majorChoice = majorInName ? majN : majB;
                         Suit minorChoice = minorInName ? minN : minB;
-                        std::string b = substituteBodyChoice (stmt.body, majorChoice, minorChoice);
+                        std::string b = substituteBodyChoice (body, majorChoice, minorChoice);
                         b = substituteBothMacros (b, stmt.name);
                         orParts.push_back (b);
                     }

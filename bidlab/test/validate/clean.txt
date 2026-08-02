@@ -1,0 +1,7 @@
+## A minimal, deliberately correct system: exactly one decision point (the
+## opening bid), whose two options exhaustively and exclusively partition
+## every hand on Points. --validate should report zero findings.
+$Any := (Points >= 0);
+$.1N. := (12 TO 14 Points);
+$.P.  := NOT (12 TO 14 Points)
+END

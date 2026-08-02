@@ -117,6 +117,9 @@ bidlab [options] reps [RuleN [RuleE [RuleS [RuleW]]]]
 | `-nchecks n` | EW holdings to simulate per deal (default 128) |
 | `-P rule` | Constraint on partner's hand |
 | `-s seed` | RNG seed for reproducibility |
+| `-L level` | Log level: `error`\|`warning`\|`info`\|`debug` (default `info`) |
+| `--rules-only` | Stop each auction the moment no rule matches, instead of simulating a guessed contract; also skips the per-deal par computation. See [bidlab/doc/design.md](bidlab/doc/design.md) for the full column-level effect. |
+| `--validate` | Check each `-i` system's rule tree offline for overlapping/gap/unreachable/duplicate rules instead of dealing; see [bidlab/doc/design.md](bidlab/doc/design.md#system-validation---validate-mode). |
 
 ### Quick Example
 

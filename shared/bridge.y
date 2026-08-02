@@ -46,22 +46,30 @@ yyerror (char const* msg)
 
 %%
 
+// "def END"/"def ';' END" are handled directly here rather than through an
+// intermediate "deflist" nonterminal (as this grammar had previously): with
+// an intermediate step, "def" reducing up to it was triggered by *any*
+// lookahead that couldn't extend "def" further (not specifically END) --
+// including a stray DEFNAME caused by a missing ';' between two rules,
+// which that reduction couldn't tell apart from a legitimate, fully-parsed
+// file. That silently discarded everything from the missing ';' onward
+// with no error at all, since the reduction's own action unconditionally
+// returned from yyparse() right there. Requiring END as a real, shifted
+// token in "list"'s own alternatives (rather than deducing "we must be
+// done" from what DIDN'T match) means a missing ';' has no valid
+// continuation at all in that state and falls through to bison's own
+// syntax-error handling below instead.
 list	:    /* empty */
 	|   END
 		{   logDebug ("Exit 1\n"); return 1;	}
 	|   list stat END
 		{   logDebug ("Exit 2\n"); return 2;	}
-	|   list deflist END
+	|   list def END
+		{   logDebug ("Exit 3\n"); return 3;	}
+	|   list def ';' END
 		{   logDebug ("Exit 3\n"); return 3;	}
 	|   list error
 		{   yyerrok; yyerror ("syntax error"); exit (1);	}
-	;
-
-deflist	:   def
-		{
-		    logDebug ("Making deflist with %p\n", $1);
-		    return 2;
-		}
 	;
 
 def	:   DEFNAME GETS expr
@@ -123,10 +131,6 @@ def	:   DEFNAME GETS expr
 		    $$ = lastDef;
 		    logDebug ("Adding def complete, defroot %p\n", defroot);
 		}
-    |   def ';' END
-        {
-		    logDebug ("Making deflist end with %p\n", $1);
-        }
 	;
 
 stat	:    expr
