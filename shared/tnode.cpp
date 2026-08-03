@@ -152,6 +152,15 @@ combineRule (void* l, void* r)
     return add_leaves (parent, (TPTR)l, (TPTR)r);
 }
 
+// Same construction the parser uses for "NOT expr"/"!expr" (see bridge.y) --
+// negateRule just builds that node programmatically instead of parsing it.
+void*
+negateRule (void* r)
+{
+    TPTR parent = make_leaf (TNOT, TNOT);
+    return add_leaves (parent, (TPTR)0, (TPTR)r);
+}
+
 void*
 next_rule (void* t)
 {

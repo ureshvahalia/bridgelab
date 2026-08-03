@@ -407,6 +407,44 @@ at the same level), is rejected at load time with an error identifying the
 rule. This check applies in both Bidder and Dealer, and also governs which
 generated variants survive Maj/Min macro expansion — see below.
 
+### Negative Inference from Rejected Siblings
+
+At each step, Bidder walks a bid's sibling rules in the order they appear in
+the file and picks the **first** one that matches the current hand
+(first-match-wins). Whatever gets accumulated as "what we know about this
+seat's hand so far" therefore includes more than just the calls actually
+made — it also includes the fact that every sibling rule listed *before*
+the one that matched must have been false, or the auction would have picked
+that one instead:
+
+```
+$.1N.2C.2H. := (Hearts >= 4);
+$.1N.2C.2S. := (Spades >= 4);
+```
+
+If North bids `2S` over `2H`, what's known about North's hand afterward is
+not just `Spades >= 4` — it's `Spades >= 4 AND NOT (Hearts >= 4)`, since
+`2H` was checked first and rejected. This is folded in automatically; no
+rule-file changes are needed to get it.
+
+This inference is only as complete as the sibling scan that produced it:
+siblings listed *after* the match are never evaluated, so nothing is
+inferred about them. If two siblings can both be true for the same hand
+(an `OVERLAP` — see `--validate` below) and the matched one isn't first,
+the "rejected" siblings before it are still soundly excluded, but a
+still-later sibling that could *also* have matched is not — the inference
+is exactly as strong as "no undetected `OVERLAP` at this decision point."
+Running `--validate` and confirming zero `OVERLAP` findings makes the
+inference complete, not just sound.
+
+This matters wherever a seat's accumulated hand knowledge is used to
+*simulate* — rather than just record — that hand: partner's hand during
+Bidder's own "what should I bid" guess (`suggestContract()`), and
+`--validate`'s reachability sampling at deeper decision points. Without it,
+both would treat hands that the auction has already ruled out (e.g. one
+with both 4+ hearts and 4+ spades, after `2S` was bid over `2H`) as still
+possible.
+
 ---
 
 ## Suit-Pair Macros: Maj / Min / OMaj / OMin / BMaj / BMin

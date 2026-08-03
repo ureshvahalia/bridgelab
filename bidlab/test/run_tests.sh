@@ -286,6 +286,32 @@ if ! grep -q '3 decision point(s), 1 overlap, 1 gap, 1 unreachable, 1 duplicate-
     VALIDATE_OK=0
 fi
 
+# Negative inference from rejected siblings (see hand-spec.md's "Negative
+# Inference from Rejected Siblings"): North's 2S is only reachable after 2H
+# is rejected, so North's accumulated hand knowledge there is "Spades >= 4
+# AND NOT (Hearts >= 4)", not just "Spades >= 4" -- making 3H's own
+# "Hearts >= 4" (the only option at that decision point) impossible for
+# every hand that could validly reach it. This asserts the resulting GAP is
+# the deterministic 100.0% (3000/3000) the fix produces, not the natural,
+# much lower rate of randomly holding both majors that a missing/broken
+# negative inference would instead show (71.6% in manual testing).
+"$BIDDER" -s 0 -i validate/negative_inference.txt --validate >validate/negative_inference.stdout 2>validate/negative_inference.stderr
+NEGINF_EXIT=$?
+if [ "$NEGINF_EXIT" -ne 0 ]; then
+    echo "validate regression test FAILED: negative_inference.txt --validate should exit 0, got $NEGINF_EXIT"
+    VALIDATE_OK=0
+fi
+if ! grep -qF 'GAP at 1N-2C-2S-3D: 3000/3000 sampled hands (100.0%) match no option' validate/negative_inference.stderr; then
+    echo "validate regression test FAILED: negative_inference.txt did not report a deterministic 100.0% GAP at 1N-2C-2S-3D:"
+    cat validate/negative_inference.stderr
+    VALIDATE_OK=0
+fi
+if ! grep -q '5 decision point(s), 1 overlap, 2 gap, 0 unreachable, 0 duplicate-text' validate/negative_inference.stderr; then
+    echo "validate regression test FAILED: negative_inference.txt --validate summary line did not match the expected counts:"
+    cat validate/negative_inference.stderr
+    VALIDATE_OK=0
+fi
+
 if [ "$VALIDATE_OK" -eq 1 ]; then
     echo "validate regression test PASSED"
 else

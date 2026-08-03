@@ -115,9 +115,15 @@ for each rep:
         bidHand(system)
             ├── walk convention tree: at each step, find first child whose rule matches the current hand
             ├── if a match is found: record bid, advance to next bidder
+            │       accumulated rules[bidder] gains the matched rule AND the negation of
+            │       every sibling rejected first (see hand-spec.md's "Negative Inference
+            │       from Rejected Siblings") -- e.g. bidding 2S over 2H also records
+            │       "NOT (Hearts >= 4)", not just "Spades >= 4"
             ├── if no match: call suggestContract() (skipped in `--rules-only` mode, which
             │   stops the auction there instead)
-            │       ├── run SDA with only the known hand fixed
+            │       ├── run SDA with only the known hand fixed -- partner's simulated hand
+            │       │   is dealt subject to partner's accumulated rules[], so the negative
+            │       │   inference above directly improves this simulation's fidelity
             │       └── pick highest-scoring available bid
             └── outputResults(): append auction-so-far (and, unless `--rules-only`,
                 bidding sequence/contract/score) to CSV
@@ -158,8 +164,11 @@ For each decision point it samples random hands satisfying the precondition
 needed to reach that point (reconstructed the same way the live auction builds
 `rules[bidder]`: `combineRule`-accumulating that seat's own rules along their
 own turns, tracked as two independent North/South accumulators since the two
-seats' rules are never combined with each other), up to `VALIDATE_TARGET_SAMPLES`
-(3000) matching hands or `VALIDATE_MAXTRIES` (2,000,000) attempts, and reports:
+seats' rules are never combined with each other, *and* -- like the live
+auction -- folding in the negation of every sibling rejected on the way to
+each bid, per hand-spec.md's "Negative Inference from Rejected Siblings"),
+up to `VALIDATE_TARGET_SAMPLES` (3000) matching hands or `VALIDATE_MAXTRIES`
+(2,000,000) attempts, and reports:
 
 | Finding | Meaning |
 |---------|---------|

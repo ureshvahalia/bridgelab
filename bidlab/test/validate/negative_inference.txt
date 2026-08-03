@@ -1,0 +1,18 @@
+## Regression check for negative inference from rejected siblings (see
+## hand-spec.md's "Negative Inference from Rejected Siblings"). North's 2S
+## is checked only after 2H is rejected, so North's accumulated hand
+## knowledge after bidding 2S is "Spades >= 4 AND NOT (Hearts >= 4)", not
+## just "Spades >= 4". That makes 3H's own "Hearts >= 4" -- the only
+## option at that point -- impossible for every hand that could validly
+## reach it, so --validate should report a 100.0% GAP at "1N-2C-2S-3D"
+## (every reachable sample matches no option). Without the fix, this
+## decision point instead sees the natural (much lower, non-deterministic)
+## rate of randomly holding both majors.
+$Any := (Points >= 0);
+$.1N. := (Points >= 0);
+$.1N.2C. := (Points >= 0);
+$.1N.2C.2H. := (Hearts >= 4);
+$.1N.2C.2S. := (Spades >= 4);
+$.1N.2C.2S.3D. := (Points >= 0);
+$.1N.2C.2S.3D.3H. := (Hearts >= 4)
+END

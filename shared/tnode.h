@@ -60,6 +60,7 @@ extern void  index_def (const char*, void*);
 extern TPTR match_string (char*);
 #ifdef BIDDER
 extern void* combineRule (void* l, void* r);
+extern void* negateRule (void* r);
 extern void  setSystem (void* sp);
 extern void* next_rule (void*);
 extern char* rule_name (void*);

@@ -184,6 +184,14 @@ convention::convention (convention* parent, bid inb, void* r)
     }
 }
 
+// A match, plus `acc` (the caller's starting accumulator) folded together
+// with the negation of every rejected sibling scanned on the way to it --
+// see findMatchingChild() below.
+struct matchResult {
+    convention* match;
+    void*       acc;
+};
+
 // Finds the first child of `node` whose rule matches `hand`, falling back to
 // rootSysp's children if nothing at `node` matches and every real call so
 // far in this auction was Pass. Every "$."-rule's path is built from the
@@ -194,26 +202,52 @@ convention::convention (convention* parent, bid inb, void* r)
 // third/fourth-hand openers fall back to the same requirements as a
 // first-hand opener unless the rules file explicitly overrides them with
 // its own "$.P...." rule (which, being found above, always takes priority
-// over this fallback). Returns NULL if nothing matches even after that.
+// over this fallback). Returns a NULL match if nothing matches even after
+// that.
+//
+// Negative inference: first-match-wins means every sibling scanned before
+// the match is known to have failed for this hand -- not merely "never
+// checked" -- so its negation is folded into the returned `acc` alongside
+// whatever `acc` already held. Without this, a hand accumulated from "S
+// bid 2S over 2H" only ever gains "Spades >= 4" (2S's own rule) and never
+// "NOT (Hearts >= 4)" (2H's rule, rejected first) -- so callers that later
+// use `acc` to *simulate* this hand (suggestContract()'s partner-hand SDA;
+// --validate's reachability sampling -- see walkValidate()) could still
+// generate/count hands with both 4+ hearts and 4+ spades, which the actual
+// auction already ruled out by choosing 2S over 2H. Only siblings actually
+// scanned-and-rejected qualify: siblings *after* the match are never
+// evaluated at all, so nothing can be soundly inferred about them -- if the
+// file has an undetected OVERLAP (see --validate), one of those unscanned
+// siblings could in principle also have matched, which is exactly why this
+// is only as complete as "no OVERLAP at this decision point". The matched
+// rule's own contribution is deliberately *not* folded into the returned
+// `acc` -- callers combine that separately, same as before this function
+// returned an accumulator at all.
 //
 // Shared by the live auction (nextBid()) and --validate's offline tree
 // walk, so the two can never disagree about what "reachable"/"matches" mean.
-static convention*
-findMatchingChild (convention* node, convention* rootSysp, bool allPassSoFar, handBase& hand)
+static matchResult
+findMatchingChild (convention* node, convention* rootSysp, bool allPassSoFar, handBase& hand, void* acc)
 {
     for (convention* s = node->firstChild (); s != NULL; s = s->nextSibling ()) {
         void* rule = s->getRule ();
-        if ((rule != NULL) && hand.checkHand (rule))
-            return s;
+        if (rule == NULL)
+            continue;
+        if (hand.checkHand (rule))
+            return { s, acc };
+        acc = (acc == NULL) ? negateRule (rule) : combineRule (acc, negateRule (rule));
     }
     if (allPassSoFar && (node != rootSysp))    {
         for (convention* s = rootSysp->firstChild (); s != NULL; s = s->nextSibling ()) {
             void* rule = s->getRule ();
-            if ((rule != NULL) && hand.checkHand (rule))
-                return s;
+            if (rule == NULL)
+                continue;
+            if (hand.checkHand (rule))
+                return { s, acc };
+            acc = (acc == NULL) ? negateRule (rule) : combineRule (acc, negateRule (rule));
         }
     }
-    return NULL;
+    return { NULL, acc };
 }
 
 const char*
@@ -495,7 +529,8 @@ auction::nextBid ()
     if (sysp == NULL)
         bidVal = considerOverride ();
     else    {
-        convention* s = findMatchingChild (sysp, rootSysp, allPassSoFar, hands[bidder]);
+        matchResult mr = findMatchingChild (sysp, rootSysp, allPassSoFar, hands[bidder], rules[bidder]);
+        convention* s = mr.match;
         if (s == NULL)  {   // No matching rule found. Take a guess at best contract
             guessWasCalled = true;
             snprintf (guessPointBidStr, sizeof (guessPointBidStr), "%s", bidStr);
@@ -520,7 +555,7 @@ auction::nextBid ()
             return false;
         } else    {   // Found matching rule
             bidVal = s->thisBid ();
-            rules[bidder] = combineRule (rules[bidder], s->getRule());
+            rules[bidder] = combineRule (mr.acc, s->getRule());
         }
         sysp = s;
     }
@@ -902,7 +937,9 @@ checkDecisionPoint (convention* node, convention* rootSysp, bool allPassSoFar,
         if (matches == 0)    {
             // Not a genuine gap if the third/fourth-hand-opener fallback
             // (see findMatchingChild()) would rescue this hand at runtime.
-            if (findMatchingChild (node, rootSysp, allPassSoFar, hand) == NULL)    {
+            // The accumulator findMatchingChild() would also build here is
+            // irrelevant -- this call only asks whether a match exists.
+            if (findMatchingChild (node, rootSysp, allPassSoFar, hand, NULL).match == NULL)    {
                 gapHits++;
                 if (!*gapExample)
                     writePbnHand (gapExample, hand.getHand (), NULL, NULL, NULL);
@@ -989,10 +1026,23 @@ walkValidate (convention* node, convention* rootSysp, int depth,
     if (!checkDecisionPoint (node, rootSysp, allPassSoFar, childPrecondition, pathStr, stats))
         return;   // unreachable -- nothing below here is reachable either
 
+    // Thread the same negative inference findMatchingChild() applies to the
+    // live auction through this structural walk too: c's own subtree is
+    // only reachable via a hand that also failed every sibling scanned
+    // before c, so siblingAcc accumulates their negations as the loop
+    // proceeds, folded only into whichever of northAcc/southAcc belongs to
+    // c's own bidder -- the other seat's accumulator passes through
+    // unchanged, same as the depth>0 combine above.
+    void* siblingAcc = childPrecondition;
     for (convention* c = node->firstChild (); c != NULL; c = c->nextSibling ())    {
         char childPath[MAXNAMELEN];
         snprintf (childPath, sizeof (childPath), "%s%s%s", pathStr, *pathStr ? "-" : "", bidNames[c->thisBid ()]);
-        walkValidate (c, rootSysp, depth + 1, northAcc, southAcc, allPassSoFar, childPath, stats);
+        void* childNorthAcc = childIsNorth ? siblingAcc : northAcc;
+        void* childSouthAcc = childIsNorth ? southAcc : siblingAcc;
+        walkValidate (c, rootSysp, depth + 1, childNorthAcc, childSouthAcc, allPassSoFar, childPath, stats);
+        void* rule = c->getRule ();
+        if (rule != NULL)
+            siblingAcc = combineRuleSafe (siblingAcc, negateRule (rule));
     }
 }
 
