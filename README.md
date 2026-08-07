@@ -28,9 +28,19 @@ make release  # Release builds
 make clean    # remove build artefacts
 ```
 
-Binaries are placed in:
+The Makefiles auto-detect `linux`, `msys2`, or `cygwin` and place binaries under:
+- `deallab/bin/<platform>/<target>/deallab[.exe]`
+- `bidlab/bin/<platform>/<target>/bidlab[.exe]`
+
+Examples:
 - `deallab/bin/linux/Debug/deallab`
 - `bidlab/bin/linux/Debug/bidlab`
+- `deallab/bin/msys2/Debug/deallab.exe`
+- `bidlab/bin/cygwin/Debug/bidlab.exe`
+
+Platform-specific runtime notes:
+- Linux and Cygwin builds embed a runpath relative to the executable, so `libdds` is loaded from the repository `lib/` directory when running from the build tree.
+- MSYS2 builds link the GCC and C++ runtimes statically and copy `dds.dll` into the output directory, so the packaged `.exe` does not depend on MSYS2 runtime DLLs being present on `PATH`.
 
 ---
 
