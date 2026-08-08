@@ -38,6 +38,33 @@ if [ -z "$BIDDER" ]; then
 fi
 echo "Using bidlab: $BIDDER"
 
+# ── Self-test: combineRule()/negateRule() NULL handling + simplify() ─────────
+# No rules file needed. Covers two things that would otherwise go
+# unexercised by everything else in this suite: combineRule(NULL, ...)
+# directly (with $ANY always defined -- see missing_any/ -- no live code
+# path passes NULL to it anymore) and simplify()'s worked examples (interval
+# merging, OR-context propagation, NOT-pushdown, contradiction detection,
+# keyword-alias collapsing -- see hand-spec.md's "Rule Simplification"),
+# built directly with make_leaf()/match_string() rather than parsed from a
+# file, and run through the exact same combineRule() path production code
+# uses (simplify()'s sole hook -- see tnode.cpp).
+echo "Running bidlab --self-test ..."
+SELFTEST_EXIT=0
+"$BIDDER" --self-test >selftest.stdout 2>selftest.stderr || SELFTEST_EXIT=$?
+if [ "$SELFTEST_EXIT" -ne 0 ]; then
+    echo "Self-test FAILED (exit $SELFTEST_EXIT)"
+    cat selftest.stdout selftest.stderr
+    exit 1
+fi
+for expected in '[self-test] PASSED' '[self-test] simplify checks PASSED'; do
+    if ! grep -qF "$expected" selftest.stderr; then
+        echo "Self-test FAILED: expected output line missing: $expected"
+        cat selftest.stdout selftest.stderr
+        exit 1
+    fi
+done
+echo "Self-test PASSED"
+
 # ── Test parameters ───────────────────────────────────────────────────────────
 # -nchecks 32: fast enough for regression
 # 3 reps with North=$.1N., East=$Any, South=$NotPass, West=$Any
@@ -85,6 +112,122 @@ if [ -f illegal_bid/results.csv ] && grep -q '1S-1H' illegal_bid/results.csv; th
 fi
 if [ "$ILLEGAL_OK" -eq 1 ]; then
     echo "Illegal-bid regression test PASSED"
+else
+    exit 1
+fi
+
+# ── Missing-$ANY regression check ───────────────────────────────────────────────
+# See missing_any/README.md. $ANY is now a language-level built-in (injected
+# by read_rules() into every loaded file, unconditionally -- see
+# shared/parse_rules.cpp), so a file that never defines it should just work,
+# treating it as "always true" the same as if the file had defined it itself.
+# (This used to be a crash repro, then a load-time-rejection test; it's a
+# positive case now -- see the README for the history.) Run with no
+# positional rule args so the CLI's own implicit "$ANY" defaulting for E/W
+# is exercised too.
+MISSING_ANY_ARGS="-s 0 -i missing_any/input.txt -o missing_any/results.csv -nchecks 4 20"
+rm -f missing_any/results.csv
+echo "Running bidlab $MISSING_ANY_ARGS ..."
+MISSING_ANY_EXIT=0
+if [ "$VERBOSE" = "1" ]; then
+    "$BIDDER" $MISSING_ANY_ARGS 2>missing_any/stderr.txt || MISSING_ANY_EXIT=$?
+    cat missing_any/stderr.txt
+else
+    "$BIDDER" $MISSING_ANY_ARGS >/dev/null 2>missing_any/stderr.txt || MISSING_ANY_EXIT=$?
+fi
+
+MISSING_ANY_OK=1
+if [ "$MISSING_ANY_EXIT" -ne 0 ]; then
+    echo "Missing-\$ANY regression test FAILED: expected exit code 0 (a missing \$ANY should no longer be an error), got $MISSING_ANY_EXIT"
+    MISSING_ANY_OK=0
+fi
+if grep -qE '^\[(WARN|ERROR)\]' missing_any/stderr.txt; then
+    echo "Missing-\$ANY regression test FAILED: unexpected warning/error output:"
+    cat missing_any/stderr.txt
+    MISSING_ANY_OK=0
+fi
+if [ ! -s missing_any/results.csv ]; then
+    echo "Missing-\$ANY regression test FAILED: results.csv should contain real output"
+    MISSING_ANY_OK=0
+fi
+if [ "$MISSING_ANY_OK" -eq 1 ]; then
+    echo "Missing-\$ANY regression test PASSED"
+else
+    exit 1
+fi
+
+# ── $ANY-redefinition regression check ──────────────────────────────────────────
+# See any_redefine/README.md. $ANY is reserved -- a file that tries to define
+# its own gets silently dropped, not honored, and not warned about either
+# (every rules file predating the $ANY built-in defines it themselves, since
+# that used to be required; that's harmless boilerplate now, not a mistake
+# worth flagging -- see the comment on injectBuiltinAny() in
+# shared/parse_rules.cpp). Uses an impossible redefinition ((Points > 100))
+# specifically so a wrongly-honored redefinition would make dealing hang/fail
+# (no 13-card hand can ever match) rather than just silently producing
+# subtly-wrong output -- so completing quickly with real results is itself
+# proof the built-in meaning won.
+ANY_REDEFINE_ARGS="-s 0 -i any_redefine/input.txt -o any_redefine/results.csv -nchecks 4 5"
+rm -f any_redefine/results.csv
+echo "Running bidlab $ANY_REDEFINE_ARGS ..."
+ANY_REDEFINE_EXIT=0
+if [ "$VERBOSE" = "1" ]; then
+    "$BIDDER" $ANY_REDEFINE_ARGS 2>any_redefine/stderr.txt || ANY_REDEFINE_EXIT=$?
+    cat any_redefine/stderr.txt
+else
+    "$BIDDER" $ANY_REDEFINE_ARGS >/dev/null 2>any_redefine/stderr.txt || ANY_REDEFINE_EXIT=$?
+fi
+
+ANY_REDEFINE_OK=1
+if [ "$ANY_REDEFINE_EXIT" -ne 0 ]; then
+    echo "\$ANY-redefinition regression test FAILED: expected exit code 0, got $ANY_REDEFINE_EXIT"
+    ANY_REDEFINE_OK=0
+fi
+if grep -qE '^\[(WARN|ERROR)\]' any_redefine/stderr.txt; then
+    echo "\$ANY-redefinition regression test FAILED: the drop should be silent, but got warning/error output:"
+    cat any_redefine/stderr.txt
+    ANY_REDEFINE_OK=0
+fi
+if [ ! -s any_redefine/results.csv ]; then
+    echo "\$ANY-redefinition regression test FAILED: results.csv should contain real output (a wrongly-honored redefinition would make dealing hang/fail instead)"
+    ANY_REDEFINE_OK=0
+fi
+if [ "$ANY_REDEFINE_OK" -eq 1 ]; then
+    echo "\$ANY-redefinition regression test PASSED"
+else
+    exit 1
+fi
+
+# ── $ANY in-body-reference regression check ─────────────────────────────────────
+# See any_body_ref/README.md. $Any is referenced from within another rule's
+# own body and never defined locally at all -- find_rule() must resolve it
+# directly, independent of parse order/defroot, not just via a post-parse
+# lookup (which would be too late for an in-body reference resolved during
+# parsing). Regression coverage for the gap the first version of the $ANY
+# built-in had.
+ANY_BODY_REF_ARGS="-s 0 -i any_body_ref/input.txt -o any_body_ref/results.csv -nchecks 4 5"
+rm -f any_body_ref/results.csv
+echo "Running bidlab $ANY_BODY_REF_ARGS ..."
+ANY_BODY_REF_EXIT=0
+if [ "$VERBOSE" = "1" ]; then
+    "$BIDDER" $ANY_BODY_REF_ARGS 2>any_body_ref/stderr.txt || ANY_BODY_REF_EXIT=$?
+    cat any_body_ref/stderr.txt
+else
+    "$BIDDER" $ANY_BODY_REF_ARGS >/dev/null 2>any_body_ref/stderr.txt || ANY_BODY_REF_EXIT=$?
+fi
+
+ANY_BODY_REF_OK=1
+if [ "$ANY_BODY_REF_EXIT" -ne 0 ]; then
+    echo "\$ANY-in-body-reference regression test FAILED: expected exit code 0, got $ANY_BODY_REF_EXIT"
+    cat any_body_ref/stderr.txt
+    ANY_BODY_REF_OK=0
+fi
+if [ ! -s any_body_ref/results.csv ]; then
+    echo "\$ANY-in-body-reference regression test FAILED: results.csv should contain real output"
+    ANY_BODY_REF_OK=0
+fi
+if [ "$ANY_BODY_REF_OK" -eq 1 ]; then
+    echo "\$ANY-in-body-reference regression test PASSED"
 else
     exit 1
 fi
@@ -242,8 +385,11 @@ fi
 # findings. flawed.txt deliberately exercises all four finding types in one
 # small file (see the comments in validate/flawed.txt for exactly how each
 # one is constructed). -s 0 makes the sampled counts/paths deterministic, so
-# both the finding lines and the final per-system summary line are asserted
-# exactly, not just their presence.
+# both the finding lines and the structure/summary table (see
+# printStatsTable()) are asserted precisely, not just their presence --
+# label+value matched with flexible whitespace between them rather than
+# exact padding, since the table's column width depends on the -i path's
+# length, not just the fixed values below.
 VALIDATE_OK=1
 
 "$BIDDER" -s 0 -i validate/clean.txt --validate >validate/clean.stdout 2>validate/clean.stderr
@@ -257,11 +403,32 @@ if grep -q '\[WARN\]' validate/clean.stderr; then
     cat validate/clean.stderr
     VALIDATE_OK=0
 fi
-if ! grep -q '1 decision point(s), 0 overlap, 0 gap, 0 unreachable, 0 duplicate-text' validate/clean.stderr; then
-    echo "validate regression test FAILED: clean.txt --validate summary line did not match the expected all-zero counts:"
-    cat validate/clean.stderr
-    VALIDATE_OK=0
-fi
+# Static/structural stats and the decision-point summary -- always printed
+# with --validate, no flag, as a table (one column per -i system; see
+# printStatsTable()). clean.txt: $.1N./$.P. are both opening bids (depth
+# 1), one hand-property rule ($Any), no waypoints, no findings.
+# Column width depends on the -i path's length, so this matches label and
+# value with flexible whitespace between them (anchored at end-of-line, so
+# it can't match a value that's a substring of a longer number) rather than
+# asserting exact padding.
+for expected in \
+    'Opening bids \(North\)[[:space:]]+2$' \
+    'Total bid-sequence rules[[:space:]]+2$' \
+    'Hand-property rules[[:space:]]+1$' \
+    'Pure path waypoints[[:space:]]+0$' \
+    'Max auction depth[[:space:]]+1$' \
+    'Decision points[[:space:]]+1$' \
+    'Overlap[[:space:]]+0$' \
+    'Gap[[:space:]]+0$' \
+    'Unreachable[[:space:]]+0$' \
+    'Duplicate-text[[:space:]]+0$'
+do
+    if ! grep -qE "$expected" validate/clean.stderr; then
+        echo "validate regression test FAILED: clean.txt structure table did not report: $expected"
+        cat validate/clean.stderr
+        VALIDATE_OK=0
+    fi
+done
 
 "$BIDDER" -s 0 -i validate/flawed.txt --validate >validate/flawed.stdout 2>validate/flawed.stderr
 FLAWED_EXIT=$?
@@ -280,11 +447,32 @@ do
         VALIDATE_OK=0
     fi
 done
-if ! grep -q '3 decision point(s), 1 overlap, 1 gap, 1 unreachable, 1 duplicate-text' validate/flawed.stderr; then
-    echo "validate regression test FAILED: flawed.txt --validate summary line did not match the expected counts:"
-    cat validate/flawed.stderr
-    VALIDATE_OK=0
-fi
+# Static/structural stats and the decision-point summary, as a table (see
+# the clean.txt block above). flawed.txt: 5 openings (1C/1D/1H/1S/1N) + 1
+# response (1N.2C.) = 6 bid-sequence rules -- note this deliberately does
+# NOT count $.1N.2C.2D. (depth 3): walkValidate() prunes at the UNREACHABLE
+# "1N-2C" decision point above it and never visits it, so these stats only
+# ever count rules that are actually reachable, not everything the file
+# textually defines (see hand-spec.md).
+for expected in \
+    'Opening bids \(North\)[[:space:]]+5$' \
+    'Responses \(South\)[[:space:]]+1$' \
+    'Total bid-sequence rules[[:space:]]+6$' \
+    'Hand-property rules[[:space:]]+1$' \
+    'Pure path waypoints[[:space:]]+0$' \
+    'Max auction depth[[:space:]]+2$' \
+    'Decision points[[:space:]]+3$' \
+    'Overlap[[:space:]]+1$' \
+    'Gap[[:space:]]+1$' \
+    'Unreachable[[:space:]]+1$' \
+    'Duplicate-text[[:space:]]+1$'
+do
+    if ! grep -qE "$expected" validate/flawed.stderr; then
+        echo "validate regression test FAILED: flawed.txt structure table did not report: $expected"
+        cat validate/flawed.stderr
+        VALIDATE_OK=0
+    fi
+done
 
 # Negative inference from rejected siblings (see hand-spec.md's "Negative
 # Inference from Rejected Siblings"): North's 2S is only reachable after 2H
@@ -306,14 +494,85 @@ if ! grep -qF 'GAP at 1N-2C-2S-3D: 3000/3000 sampled hands (100.0%) match no opt
     cat validate/negative_inference.stderr
     VALIDATE_OK=0
 fi
-if ! grep -q '5 decision point(s), 1 overlap, 2 gap, 0 unreachable, 0 duplicate-text' validate/negative_inference.stderr; then
-    echo "validate regression test FAILED: negative_inference.txt --validate summary line did not match the expected counts:"
-    cat validate/negative_inference.stderr
-    VALIDATE_OK=0
-fi
+for expected in \
+    'Decision points[[:space:]]+5$' \
+    'Overlap[[:space:]]+1$' \
+    'Gap[[:space:]]+2$' \
+    'Unreachable[[:space:]]+0$' \
+    'Duplicate-text[[:space:]]+0$'
+do
+    if ! grep -qE "$expected" validate/negative_inference.stderr; then
+        echo "validate regression test FAILED: negative_inference.txt structure table did not report: $expected"
+        cat validate/negative_inference.stderr
+        VALIDATE_OK=0
+    fi
+done
 
 if [ "$VALIDATE_OK" -eq 1 ]; then
     echo "validate regression test PASSED"
+else
+    exit 1
+fi
+
+# ── --stats (dynamic rule-coverage) checks ──────────────────────────────────────
+# printRuleCoverageTable(): how often nextBid() matched a rule vs. fell
+# through to suggestContract()'s guess, by round, as a table (one column
+# per -i system; see printTable()) -- the empirical counterpart to
+# --validate's GAP percentage (a sampling-based prediction of the same
+# thing). -s 0 -nchecks 4 --rules-only 5 keeps this fast and deterministic;
+# --rules-only also confirms rule coverage can be checked without paying for
+# the (skipped) simulation. Column width depends on the -i path's length
+# (see the --validate table checks above), so label+value are matched with
+# flexible whitespace between them, anchored at end-of-line, rather than
+# exact padding.
+STATS_ARGS="-s 0 -i testinput.txt -o stats_run.csv -nchecks 4 --rules-only 5 .1N. NotPass"
+rm -f stats_run.csv
+STATS_OK=1
+
+echo "Running bidlab --stats $STATS_ARGS ..."
+"$BIDDER" --stats $STATS_ARGS >stats_with.stdout 2>stats_with.stderr
+STATS_WITH_EXIT=$?
+if [ "$STATS_WITH_EXIT" -ne 0 ]; then
+    echo "stats regression test FAILED: --stats run should exit 0, got $STATS_WITH_EXIT"
+    cat stats_with.stderr
+    STATS_OK=0
+fi
+if ! grep -qF 'System rule coverage (--stats):' stats_with.stderr; then
+    echo "stats regression test FAILED: --stats did not print the table title"
+    cat stats_with.stderr
+    STATS_OK=0
+fi
+for expected in \
+    'Opening bids \(North\)[[:space:]]+5/5 \(100.0%\)$' \
+    'Responses \(South\)[[:space:]]+4/5 \(80.0%\)$' \
+    'Opener'\''s rebid \(North\)[[:space:]]+3/4 \(75.0%\)$' \
+    'Responder'\''s rebid \(South\)[[:space:]]+1/3 \(33.3%\)$' \
+    'Opener'\''s 2nd rebid \(North\)[[:space:]]+0/1 \(0.0%\)$' \
+    'Overall[[:space:]]+13/18 \(72.2%\)$'
+do
+    if ! grep -qE "$expected" stats_with.stderr; then
+        echo "stats regression test FAILED: --stats did not report: $expected"
+        cat stats_with.stderr
+        STATS_OK=0
+    fi
+done
+
+# Same command, no --stats: the rule-coverage report must not appear at all.
+echo "Running bidlab (no --stats) $STATS_ARGS ..."
+"$BIDDER" $STATS_ARGS >stats_without.stdout 2>stats_without.stderr
+STATS_WITHOUT_EXIT=$?
+if [ "$STATS_WITHOUT_EXIT" -ne 0 ]; then
+    echo "stats regression test FAILED: no-flag run should exit 0, got $STATS_WITHOUT_EXIT"
+    STATS_OK=0
+fi
+if grep -q 'rule coverage' stats_without.stderr; then
+    echo "stats regression test FAILED: rule-coverage report appeared without --stats:"
+    cat stats_without.stderr
+    STATS_OK=0
+fi
+
+if [ "$STATS_OK" -eq 1 ]; then
+    echo "stats regression test PASSED"
 else
     exit 1
 fi

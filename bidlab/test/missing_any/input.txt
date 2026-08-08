@@ -1,0 +1,5 @@
+$Opener := (Points >= 0);
+$Resp := (Points >= 0);
+$.1N. := (15 TO 17 Points);
+$.P. := NOT (15 TO 17 Points)
+END

@@ -1,0 +1,9 @@
+## $ANY is reserved; this attempted redefinition should be dropped with a
+## warning, not applied. "(Points > 100)" is impossible for any real
+## 13-card hand -- if it were mistakenly honored, dealing (which defaults
+## to $ANY for N/S here, no positional rule args) could never find a
+## matching hand and would exhaust its retry budget instead of completing.
+$ANY := (Points > 100);
+$.1N. := (15 TO 17 Points);
+$.P. := NOT (15 TO 17 Points)
+END

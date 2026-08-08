@@ -391,10 +391,47 @@ $.1N.        := $ntop
 END
 ```
 
-The special name `$ANY` is a built-in wildcard that always evaluates to true;
-it is used in Dealer command lines and Bidder configuration to mean "no
-constraint on this seat".  Because the language is case-insensitive, `$any`,
-`$Any`, and `$ANY` in an input file all refer to the same rule.
+The special name `$ANY` is a **built-in** name meaning "no constraint on
+this seat" (always true), used in Dealer command lines and Bidder
+configuration — a rules file does not need to define it. `find_rule()`
+(`shared/tnode.cpp`, shared by both programs) resolves the name `"$ANY"`
+directly to a single, process-wide "always true" node, without ever
+consulting the file's own definition table — so it works everywhere a name
+can be referenced: after a file is fully loaded (Bidder's `bidHand()`
+accumulator reset, the CLI's implicit seat defaulting) *and* during
+parsing, from within another rule's own body in the same file (e.g.
+`$X := $Any AND (Spades >= 4);`), even if that file never defines `$ANY`
+anywhere and even if `$ANY` is the very first thing referenced in the
+file. If a rules file *does* define `$ANY`/`$Any`/`$any` itself — the
+language is case-insensitive, so all three spellings are the same name —
+that definition is simply never consulted, by this or any other lookup;
+the built-in "always true" meaning always wins. (Many existing rules files
+still define `$Any := (Points >= 0);` themselves, from before this name
+became built-in — that's harmless, redundant boilerplate now, not an
+error, and isn't flagged.)
+
+**`:&`/`:|` on `$ANY` behave differently from plain `:=`, and inconsistently
+with each other, depending on incidental file content.** `:&`/`:|` look up
+their target through a different, lower-level function than plain
+references do (one that operates on the file's own definition table, not
+the built-in lookup described above), so they never reach the built-in
+node at all — only ever a `$ANY := ...;` the *same file* wrote itself, if
+any:
+- No `$ANY := ...;` earlier in the file: `$ANY :& expr` / `$ANY :| expr`
+  fails to load, the same "requires an earlier definition" error as `:&`/
+  `:|` on any other undefined name.
+- File *does* define `$ANY := ...;` earlier: `$ANY :& expr` "succeeds"
+  (loads without error) but does nothing observable — it mutates the
+  file's own now-irrelevant local copy, not the built-in meaning every
+  actual lookup uses, so `$ANY` still behaves as "always true" regardless
+  of what `expr` said.
+
+In short: `:&`/`:|` can never actually change what `$ANY` means, but
+whether that's silent or a fatal load error depends on whether the file
+happens to also have a plain `$ANY := ...;` sitting earlier in it — an
+inconsistency, left as-is for now rather than fixed, since real files
+essentially never write `$ANY :&`/`:|` (the ubiquitous pattern is a plain
+`$Any := (Points >= 0);`, now redundant but harmless per above).
 
 ### Bid-Sequence Legality
 
@@ -444,6 +481,128 @@ Bidder's own "what should I bid" guess (`suggestContract()`), and
 both would treat hands that the auction has already ruled out (e.g. one
 with both 4+ hearts and 4+ spades, after `2S` was bid over `2H`) as still
 possible.
+
+### Rule Simplification
+
+Negative inference (above) means the accumulated rule for a seat grows by
+one clause every round — including, now, a raw `NOT(...)` for every
+rejected sibling — so by round 5 or 6 of a real auction it can be a large,
+redundant tree even though what it actually *means* is usually simple.
+`combineRule()` (`shared/tnode.cpp`, the sole place a bidding sequence's
+per-seat rule ever gets combined with another) automatically simplifies
+the result before returning it, via `shared/simplify.cpp`'s `simplifyRule()`.
+
+**What it does**, in two tiers:
+
+- **Interval folding**: repeated comparisons on the *same* quantity within
+  an `AND`-chain merge into one tightened range. `(10 TO 18 Points) AND
+  (Points > 15)` → `(16 TO 18 Points)`. This applies uniformly to *any*
+  keyword — `Points`, `Controls`, `NLTC`, suit-specific ones like `Spts`/
+  `Sl`/`Skcs`, even specific-card tests like `Sa` — not a hardcoded list of
+  "interesting" keywords, because the atom identity it folds on is the
+  underlying registered evaluator function (see "Keyword aliasing" below),
+  the same mechanism regardless of which keyword it is.
+- **Context propagation into `OR`**: an `OR`'s branches are each implicitly
+  `AND`ed with everything above the `OR` (see the two examples below), so a
+  branch-local clause that's already fully implied by that outer context is
+  dropped from the branch, and a branch that becomes contradictory given
+  the outer context is pruned entirely — collapsing the whole `OR` to true
+  if every other branch already vanished, or false if all of them did. This
+  is a single top-down pass, not full distribution of `AND` over `OR` into
+  disjunctive normal form, which risks exponential blowup on deeply nested
+  trees — deliberately avoided.
+- **`NOT`-pushdown**: `NOT(A AND B)` → `NOT(A) OR NOT(B)` (De Morgan), and
+  `NOT` directly on a comparison turns into the complementary comparison
+  (`NOT(Hearts >= 4)` → `Hearts < 4`) so it folds like any other comparison
+  instead of staying opaque. This is what lets `negateRule()`'s raw `NOT`
+  output (see "Negative Inference" above) actually fold into the interval
+  math, rather than just sitting there unfolded.
+
+**Examples** (verified against this codebase's actual output — see
+`runSimplifyTests()` in `bidlab.cpp`, exercised by `bidlab --self-test`):
+
+```
+(10 TO 18 Points) AND (Points > 15)
+  -> (POINTS >= 16) AND (POINTS <= 18)
+
+(10 TO 18 Points) AND (((Points > 14) AND (Spades ?= 4)) OR (Spades > 4))
+  -> unchanged in effect: Points > 14 is NOT implied by Points >= 10 alone
+     (a 12-point hand satisfies the outer range but not this clause)
+
+(10 TO 18 Points) AND (((Points > 5) AND (Spades ?= 4)) OR (Spades > 4))
+  -> the "Points > 5" clause is dropped: Points >= 10 already guarantees it,
+     leaving (10 TO 18 Points) AND ((Spades ?= 4) OR (Spades > 4))
+
+NOT(Hearts >= 4)                       -> Hearts < 4
+(Hearts < 4) AND (Hearts >= 4)         -> a genuine contradiction, detected
+                                           exactly (an empty interval), not
+                                           approximated by sampling the way
+                                           --validate's UNREACHABLE finding is
+```
+
+**Keyword aliasing**: `Points`/`tpts`, `Sl`/`Slen`, and `Skcs`/`Skeycards`
+are recognized as the same atom regardless of which spelling a rule uses,
+because atom identity is keyed on the underlying registered evaluator
+function (`kwordFnAt()`/`suffixFnAt()` in `shared/fns_common.cpp`), not the
+keyword's spelling — so `(Sl >= 4) AND (Slen <= 6)` folds into one range
+using whichever spelling was written first, same as if both had used the
+same spelling throughout. **Known gap**: `Spades` (a `TKWORD`, backed by
+`spade_len`) and `Sl` (a `TSUITFUNC`, backed by `suit_len` called with
+suit=Spades) compute the same number through two genuinely different
+registered functions, so they are *not* unified — `(Spades >= 4) AND
+(Sl <= 6)` does not fold. Closing this would need a small explicit
+cross-reference table (one entry per suit × keyword pair); not done.
+
+**Explicitly out of scope** (left opaque, passed through unchanged, never
+guessed at — simplification is only ever as complete as what it
+recognizes, never *incorrect* about what it doesn't):
+- `!=` and exhaustive small-domain reasoning (e.g. proving `Spades != 4 AND
+  Spades != 5 AND ... AND Spades != 13` combined with `Spades >= 4` is
+  impossible) — would need bitset-style domain tracking instead of a plain
+  `[lo, hi]` interval per atom.
+- Real-world domain bounds (max HCP is 37, max suit length is 13, ...) —
+  never assumed; only relationships *between* a rule file's own comparisons
+  are used, nothing about bridge itself is baked in.
+- `SHAPE`/`PATTERN` literals — combinatorial predicates over card
+  placement, not linear inequalities; reasoning about them needs a
+  different kind of solver, not interval arithmetic.
+- `OR` of comparisons on the *same* atom (e.g. `(Spades ?= 4) OR
+  (Spades > 4)` could fold to `Spades >= 4` — a union of intervals rather
+  than the intersection every other case here does) — a natural adjacent
+  addition, not yet implemented.
+
+**Two implementation details that affect the exact output text, neither a
+correctness concern**: `TGT`/`TLT` (`>`/`<`) are always canonicalized to
+`TGEQ`/`TLEQ` with an adjusted boundary (`Points > 14` → `Points >= 15`)
+as part of folding, even when nothing else about a clause changes — so
+"unchanged" from simplification only ever means structurally/semantically
+unchanged, not guaranteed byte-identical to the input. And when multiple
+comparisons on different atoms get rebuilt into a fresh `AND`/`OR` chain,
+their order follows internal hash-map iteration, not the original source
+order.
+
+**Never mutates an existing node.** `$Name` references splice in shared
+pointers (see "Rule References" above and `bridge.y`), so two different
+rules can share actual tree nodes; `simplifyRule()` only ever constructs
+new nodes, or reuses an existing atomic leaf (a keyword like `Points`) by
+reference without modifying it. Internally, "definitely true" and
+"definitely false" are represented as real leaf nodes, not `NULL` — `NULL`
+only means "always true" as `simplifyRule()`'s/`combineRule()`'s own
+top-level return value or as an operand to them, not as a node embedded
+inside a tree being constructed (see the design note on this in the commit
+that made `combineRule()`/`negateRule()` themselves `NULL`-tolerant) — so
+`simplifyRule()` only ever collapses to `NULL` once, at the very end.
+
+**Not yet done**: running `simplifyRule()` once over every individually-
+authored rule body at load time (independent of `combineRule()`), so a
+rule that's never combined with anything else still gets cleaned up, and
+so genuine contradictions surface as an immediate load-time diagnostic
+instead of only showing up once two rules happen to get combined during an
+auction or a `--validate` walk. Would also make `--validate`'s `DUPLICATE`
+check (byte-identical rule text) catch semantic duplicates written
+differently, for free, since it's a plain string comparison already.
+`simplifyRule()` itself has no Bidder-specific dependency, so this would
+work in Dealer too.
 
 ---
 

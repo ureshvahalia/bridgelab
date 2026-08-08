@@ -119,7 +119,9 @@ bidlab [options] reps [RuleN [RuleE [RuleS [RuleW]]]]
 | `-s seed` | RNG seed for reproducibility |
 | `-L level` | Log level: `error`\|`warning`\|`info`\|`debug` (default `info`) |
 | `--rules-only` | Stop each auction the moment no rule matches, instead of simulating a guessed contract; also skips the per-deal par computation. See [bidlab/doc/design.md](bidlab/doc/design.md) for the full column-level effect. |
-| `--validate` | Check each `-i` system's rule tree offline for overlapping/gap/unreachable/duplicate rules instead of dealing; see [bidlab/doc/design.md](bidlab/doc/design.md#system-validation---validate-mode). |
+| `--validate` | Check each `-i` system's rule tree offline for overlapping/gap/unreachable/duplicate rules instead of dealing; also always prints static system stats (bid counts by round, etc.). See [bidlab/doc/design.md](bidlab/doc/design.md#system-validation---validate-mode). |
+| `--stats` | Print dynamic rule-coverage stats (how often a rule matched vs. required a guess, by round) at the end of a normal run. See [bidlab/doc/design.md](bidlab/doc/design.md#system-stats). |
+| `--self-test` | Developer check of internal `NULL`-handling primitives; no rules file needed. See [bidlab/doc/design.md](bidlab/doc/design.md). |
 
 ### Quick Example
 

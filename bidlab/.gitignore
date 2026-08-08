@@ -26,6 +26,19 @@ test/andor/*.csv
 test/andor/*.stderr
 test/validate/*.stdout
 test/validate/*.stderr
+test/missing_any/*.csv
+test/missing_any/stderr.txt
+test/any_redefine/*.csv
+test/any_redefine/stderr.txt
+test/any_body_ref/*.csv
+test/any_body_ref/stderr.txt
+test/stats_run.csv
+test/stats_with.stdout
+test/stats_with.stderr
+test/stats_without.stdout
+test/stats_without.stderr
+test/selftest.stdout
+test/selftest.stderr
 
 # Release packaging artefacts
 Package/

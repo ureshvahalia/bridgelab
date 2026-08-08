@@ -1,0 +1,922 @@
+## ============================================================
+## Bridge World Standard 2017 (BWS-2017)
+## Transcribed from bidlab/input/BWS.pdf (bridgeworld.com), for use
+## with the Bidder rule language (see shared/hand-spec.md).
+##
+## SCOPE: this file covers IV. Partnership-Bidding Methods -- auctions
+## in which our side calls first and the opponents pass throughout --
+## plus the slam-bidding mechanics of III. Slam-Bidding Methods that
+## are invoked from inside those auctions (Key-Card Blackwood, Gerber,
+## Grand Slam Force, splinters, asking bids).
+##
+## OMITTED BY REQUEST: V. Competitive-Bidding Methods and
+## VI. Defensive-Bidding Methods, both of which describe auctions
+## where the OPPONENTS bid. This rule language has no token for an
+## opposing call in a "$." sequence name anyway (a sequence is a plain
+## alternation of our own calls), so those two sections could not be
+## represented here even mechanically. VII. Bridge World Standard
+## Defense (opening leads and carding) is defense, not bidding, and is
+## likewise out of scope for a bidding-system file.
+##
+## NOT SEPARATELY ENCODED: I. Definitions and II. General
+## Understandings and Defaults are prose -- vocabulary and default
+## tie-break judgments (forcing/nonforcing interpretation, redouble
+## defaults, the bypass rule, etc.) rather than hand-typed calls -- so
+## they have no direct "$." representation. Where one of them shapes a
+## rule below, it is called out in a comment at that rule.
+##
+## JUDGMENT CALLS: BWS deliberately leaves some choices to partnership
+## agreement/judgment (which minor to open with 4=4, seat-dependent
+## weak-two soundness, choice of suit with a minimum 5-6 two-suiter,
+## etc.). Since this language has no notion of "judgment" or seat
+## position, each such point is resolved with one explicit, noted
+## convention below rather than left ambiguous.
+##
+## ARITHMETIC LIMITATION: the rule language has no addition operator
+## over card-presence booleans, so a genuine two-suit key-card count
+## (needed for true 6KCB after both suits of a pair are supported)
+## can't be built from the available primitives. Six-Key-Card
+## Blackwood is therefore not separately modeled; sequences that would
+## invoke it fall back to ordinary single-suit KCB on the suit named.
+## ============================================================
+
+
+## ============================================================
+## HELPERS
+## ============================================================
+
+## $ANY is documented as a built-in wildcard, but the command-line
+## seat-rule lookup needs an actual registered rule by that name, so
+## it is defined explicitly here (matching every other input file in
+## this repo).
+
+$Any := Points >= 0 ;
+
+## HopeUnobstructed, if false, gives 22+ points to the opponents,
+## making them very likely to interfere
+
+$HopeUnobstructed := Points > 17;
+
+## Balanced means 4-3-3-3, 4-4-3-2 or 5-3-3-2 (I. Definitions).
+$balanced := shape [4,3,3,3] OR shape [4,4,3,2] OR shape [5,3,3,2] ;
+
+$noMajor4 := (Spades < 4) AND (Hearts < 4) ;
+$noMajor5 := (Spades < 5) AND (Hearts < 5) ;
+$balNoMajor := $balanced AND $noMajor4 ;
+
+## Generic strength bands reused across many sequences.
+$inv := 10 TO 12 Points ;
+$gf := Points >= 13 ;
+$slamish := (Points >= 12) AND (Controls >= 4) ;
+
+## ---- Ace-count helpers (for Gerber and plain Blackwood, which have
+## no ready-made "how many aces" keyword the way Skcs/Hkcs/Dkcs/Ckcs
+## give key-card counts for a specific agreed suit). ----
+$aces0 := NOT Sa AND NOT Ha AND NOT Da AND NOT Ca ;
+$aces1 := (Sa AND NOT Ha AND NOT Da AND NOT Ca) OR
+          (NOT Sa AND Ha AND NOT Da AND NOT Ca) OR
+          (NOT Sa AND NOT Ha AND Da AND NOT Ca) OR
+          (NOT Sa AND NOT Ha AND NOT Da AND Ca) ;
+$aces2 := (Sa AND Ha AND NOT Da AND NOT Ca) OR
+          (Sa AND NOT Ha AND Da AND NOT Ca) OR
+          (Sa AND NOT Ha AND NOT Da AND Ca) OR
+          (NOT Sa AND Ha AND Da AND NOT Ca) OR
+          (NOT Sa AND Ha AND NOT Da AND Ca) OR
+          (NOT Sa AND NOT Ha AND Da AND Ca) ;
+$aces3 := (NOT Sa AND Ha AND Da AND Ca) OR
+          (Sa AND NOT Ha AND Da AND Ca) OR
+          (Sa AND Ha AND NOT Da AND Ca) OR
+          (Sa AND Ha AND Da AND NOT Ca) ;
+$aces4 := Sa AND Ha AND Da AND Ca ;
+
+## Plain (non-key-card) Blackwood/ace-ask step reply groups: one step
+## = 0 or 3 aces, two steps = 1 or 4, three steps = 2 (III.
+## Ace-and-Key-Card-Asking (c)).
+$acesLow := $aces0 OR $aces3 ;
+$acesMid := $aces1 OR $aces4 ;
+$acesHigh := $aces2 ;
+
+
+## ============================================================
+## IV.A / IV.B  OPENING BIDS AND CHOICE OF SUIT
+## ============================================================
+
+## ---- Choice-of-suit helpers ----
+
+## Standard priority for a 5+/5+ two-suited major hand: bid the
+## longer; with equal length, spades (IV.B states this explicitly only
+## for the 5-5 black-suit case -- "opener should always bid one spade"
+## -- but the same priority is the ordinary default for 5-5 majors).
+$majorPrioritySpade := (Spades >= 5) AND (Spades >= Hearts) ;
+$majorPriorityHeart := (Hearts >= 5) AND (Hearts > Spades) ;
+
+## Minimum-range adjacent 5-6 two-suiter: open the higher, shorter
+## suit only when the long suits are adjacent (IV.B). Meaningful only
+## for the spades-over-hearts (major) and diamonds-over-clubs (minor)
+## cases -- a hearts-over-diamonds case already produces the same
+## result as the general major-over-minor priority below, so no
+## separate helper is needed for it.
+$adjacent56 := 11 TO 13 Points ;
+$spadeOverHeart56 := (Spades ?= 5) AND (Hearts ?= 6) AND $adjacent56 ;
+$diamondOverClub56 := (Diamonds ?= 5) AND (Clubs ?= 6) AND $adjacent56 AND
+                       (Spades < 5) AND (Hearts < 5) ;
+
+## Minor choice with no qualifying major: three-three always opens one
+## club (explicit in IV.B); four-four in the minors, or 4=4 diamonds
+## and 5 clubs at minimum strength, is left to judgment in the text --
+## resolved here as a single explicit convention, open one diamond.
+$minor44orLong := ((Clubs ?= 4) AND (Diamonds ?= 4)) OR
+                   ((Diamonds ?= 4) AND (Clubs ?= 5) AND (11 TO 14 Points)) ;
+$openDiamondJudgment := $minor44orLong OR $diamondOverClub56 ;
+
+## Opening-strength band for one-level suit openings (22+ opens two
+## clubs instead; see below). IV.A's spade example
+## (AQxxx-Axx-Jxxx-x = 11 HCP) is the stated minimum for a major; a
+## minor's "about half a point higher" minimum isn't representable at
+## whole-HCP granularity, so both use the same floor.
+$openingHand := 11 TO 21 Points ;
+
+## ---- Balanced notrump-family openings ----
+
+## Three notrump: gambling, a solid seven-card minor with little side
+## strength.
+$soundClubSuit := (Clubs >= 7) AND (Cpts >= 6) ;
+$soundDiamondSuit := (Diamonds >= 7) AND (Dpts >= 6) ;
+$.3N. := (Points <= 10) AND ($soundClubSuit OR $soundDiamondSuit) AND NOT $balanced ;
+
+## Two clubs: strong, artificial, 22+ points, any shape (includes the
+## 22-24 and 25+ balanced hands, distinguished later by opener's own
+## rebid, not by the opening bid itself).
+$.2C. := (Points >= 22) AND NOT $.3N. ;
+
+## Two notrump: 20 to weak 22 balanced (split here at 20-21, since
+## "weak" vs. "strong" 22 isn't distinguishable from raw HCP, and
+## 22-24 balanced already opens two clubs above).
+$.2N. := (20 TO 21 Points) AND $balanced AND $noMajor5 AND NOT ($.2C. OR $.3N.) ;
+
+## One notrump: 15-17 balanced, no 5-card major (with a 5-card major
+## BWS makes 1NT merely optional; resolved here by the mainstream
+## five-card-major default of opening the major instead -- see 1H/1S
+## below).
+$.1N. := (15 TO 17 Points) AND $balanced AND $noMajor5 AND NOT ($.2C. OR $.2N. OR $.3N.) ;
+
+## ---- Weak two-bids (2D/2H/2S): exactly six cards in the suit, 5-10
+## points, no four-card-or-longer side suit, no side void. Fixing
+## length at exactly six already rules out two of BWS's three
+## disqualifiers (five-card and seven-card suits); the "flimsy six"
+## and third/fourth-seat judgment calls have no representation here. ----
+$weakTwoStrength := 5 TO 10 Points ;
+$.2D. := $weakTwoStrength AND (Diamonds ?= 6) AND
+         (1 TO 3 Spades) AND (1 TO 3 Hearts) AND (1 TO 3 Clubs) AND
+         NOT ($.2C. OR $.2N. OR $.3N.) ;
+$.2Maj. := $weakTwoStrength AND (Maj ?= 6) AND
+           (1 TO 3 OMaj) AND (1 TO 3 Diamonds) AND (1 TO 3 Clubs) AND
+           NOT ($.2C. OR $.2N. OR $.3N.) ;
+
+## ---- Three-level preempts: seven-card suit, 5-10 points ----
+$.3Maj. := (5 TO 10 Points) AND (Maj >= 7) AND
+           NOT ($.2C. OR $.2N. OR $.3N.) ;
+$.3Min. := (5 TO 10 Points) AND (Min >= 7) AND
+           NOT ($.2C. OR $.2N. OR $.3N.) ;
+
+## ---- Four-level minor preempts (IV.A: "An opening of four of a
+## minor is natural.") ----
+$.4Min. := (5 TO 10 Points) AND (Min >= 8) AND NOT $.3N. ;
+
+## ---- One-level suit openings ----
+
+## One spade: longer-or-equal spades among the majors, or the
+## adjacent-56 override.
+$.1S. := $openingHand AND ($majorPrioritySpade OR $spadeOverHeart56) AND
+         NOT ($.1N. OR $.2N. OR $.2C.) ;
+
+## One heart: strictly longer hearts than spades (the adjacent-56
+## override on a 5=6 major two-suiter takes precedence -- see above).
+$.1H. := $openingHand AND $majorPriorityHeart AND NOT $spadeOverHeart56 AND
+         NOT ($.1N. OR $.2N. OR $.2C.) ;
+
+## One diamond: no qualifying major, and either diamonds are longer
+## than clubs or one of the judgment cases above resolves to diamonds
+## (the three-three case is never "longer" and never in the judgment
+## set, so it falls through to one club below).
+$.1D. := $openingHand AND (Spades < 5) AND (Hearts < 5) AND
+         NOT $spadeOverHeart56 AND
+         ((Diamonds > Clubs) OR $openDiamondJudgment) AND
+         NOT ($.1N. OR $.2N. OR $.2C.) ;
+
+## One club: the minor-suit catch-all (three-three minors always land
+## here, per IV.B).
+$.1C. := $openingHand AND (Spades < 5) AND (Hearts < 5) AND
+         NOT $spadeOverHeart56 AND
+         NOT ((Diamonds > Clubs) OR $openDiamondJudgment) AND
+         NOT ($.1N. OR $.2N. OR $.2C.) ;
+
+## ---- Pass ----
+$.P. := NOT ($.1C. OR $.1D. OR $.1H. OR $.1S. OR $.1N. OR
+             $.2C. OR $.2D. OR $.2H. OR $.2S. OR $.2N. OR
+             $.3C. OR $.3D. OR $.3H. OR $.3S. OR $.3N. OR
+             $.4C. OR $.4D.) ;
+
+
+## ============================================================
+## IV.C  AFTER OUR PREEMPT
+## ============================================================
+## The same ace-ask / key-card-ask machinery (III.
+## Ace-and-Key-Card-Asking, IV.C) applies over every non-club,
+## below-four-level preempt (2D/2H/2S weak twos and 3D/3H/3S
+## preempts); it is spelled out here for the weak two-bids only to
+## keep the file a manageable size -- the identical structure (four
+## notrump = plain ace-ask, four clubs = key-card-ask, same step
+## replies) carries over unchanged to 3D/3H/3S.
+
+## Four notrump: plain ace-ask (BWS gives no explicit HCP floor for
+## when responder is judged slamish enough to probe).
+$.2D.4N. := $slamish ;
+$.2Maj.4N. := $slamish ;
+$.2D.4N.5C. := $acesLow ;
+$.2D.4N.5D. := $acesMid ;
+$.2D.4N.5H. := $acesHigh ;
+$.2H.4N.5C. := $acesLow ;
+$.2H.4N.5D. := $acesMid ;
+$.2H.4N.5H. := $acesHigh ;
+$.2S.4N.5C. := $acesLow ;
+$.2S.4N.5D. := $acesMid ;
+$.2S.4N.5H. := $acesHigh ;
+
+## Four clubs: key-card-ask, agreeing opener's suit as trump.
+$.2D.4C. := $slamish ;
+$.2Maj.4C. := $slamish ;
+$.2D.4C.4D. := (Dkcs ?= 0) OR (Dkcs ?= 3) ;
+$.2D.4C.4H. := (Dkcs ?= 1) OR (Dkcs ?= 4) ;
+$.2D.4C.4S. := (Dkcs ?= 2) AND NOT Dq ;
+$.2D.4C.4N. := (Dkcs ?= 2) AND Dq ;
+$.2H.4C.4D. := (Hkcs ?= 0) OR (Hkcs ?= 3) ;
+$.2H.4C.4H. := (Hkcs ?= 1) OR (Hkcs ?= 4) ;
+$.2H.4C.4S. := (Hkcs ?= 2) AND NOT Hq ;
+$.2H.4C.4N. := (Hkcs ?= 2) AND Hq ;
+$.2S.4C.4D. := (Skcs ?= 0) OR (Skcs ?= 3) ;
+$.2S.4C.4H. := (Skcs ?= 1) OR (Skcs ?= 4) ;
+$.2S.4C.4S. := (Skcs ?= 2) AND NOT Sq ;
+$.2S.4C.4N. := (Skcs ?= 2) AND Sq ;
+
+## Below-game, non-jump new-suit response: a one-round force,
+## suggesting length, not yet fit-showing.
+$.2D.3C. := (Points >= 8) AND (Clubs >= 4) ;
+$.2Maj.3C. := (Points >= 8) AND (Clubs >= 4) ;
+$.2Maj.3D. := (Points >= 8) AND (Diamonds >= 4) ;
+
+## Two-notrump response to a weak two-bid: invites game, suggests a
+## fit for opener's suit.
+$.2D.2N. := $inv AND (Diamonds >= 2) ;
+$.2Maj.2N. := $inv AND (Maj >= 2) ;
+
+## Weak two-bidder's continuations after the two-notrump inquiry:
+## feature-showing (an ace or king in a side suit) with a maximum; a
+## minimum simply rebids the suit at the three level.
+$.2D.2N.3D. := Points <= 7 ;
+$.2D.2N.3C. := (Points >= 8) AND (Ca OR Ck) ;
+$.2D.2N.3H. := (Points >= 8) AND (Ha OR Hk) ;
+$.2D.2N.3S. := (Points >= 8) AND (Sa OR Sk) ;
+$.2H.2N.3H. := Points <= 7 ;
+$.2H.2N.3C. := (Points >= 8) AND (Ca OR Ck) ;
+$.2H.2N.3D. := (Points >= 8) AND (Da OR Dk) ;
+$.2H.2N.3S. := (Points >= 8) AND (Sa OR Sk) ;
+$.2S.2N.3S. := Points <= 7 ;
+$.2S.2N.3C. := (Points >= 8) AND (Ca OR Ck) ;
+$.2S.2N.3D. := (Points >= 8) AND (Da OR Dk) ;
+$.2S.2N.3H. := (Points >= 8) AND (Ha OR Hk) ;
+
+## ---- Responses to a three-notrump (gambling) opening ----
+
+## Four notrump: invitational (quantitative).
+$.3N.4N. := Points >= 12 ;
+
+## Four diamonds: asks for side shortness outside the solid minor.
+$.3N.4D. := $slamish ;
+$.3N.4D.4H. := Hearts <= 1 ;
+$.3N.4D.4S. := (Hearts >= 2) AND (Spades <= 1) ;
+$.3N.4D.5C. := (Hearts >= 2) AND (Spades >= 2) AND $soundDiamondSuit AND (Clubs <= 1) ;
+$.3N.4D.5D. := (Hearts >= 2) AND (Spades >= 2) AND $soundClubSuit AND (Diamonds <= 1) ;
+$.3N.4D.4N. := (Hearts >= 2) AND (Spades >= 2) AND
+               (($soundDiamondSuit AND (Clubs >= 2)) OR ($soundClubSuit AND (Diamonds >= 2))) ;
+
+## Club bids are pass-or-correct (a weak hand running from notrump
+## without knowing opener's actual minor).
+$.3N.4C. := Points <= 9 ;
+
+## ---- Responses to natural four-of-a-minor preempts: a new suit is
+## an asking bid about the suit named (one step = neither round
+## control, two steps = second-round control, three steps = first-
+## round control, higher = both); four notrump is the key-card-ask. ----
+$.4C.4D. := (Points >= 8) AND (Diamonds >= 3) ;
+$.4C.4H. := (Points >= 8) AND (Hearts >= 3) ;
+$.4C.4S. := (Points >= 8) AND (Spades >= 3) ;
+$.4C.4N. := $slamish ;
+$.4C.4N.5C. := (Ckcs ?= 0) OR (Ckcs ?= 3) ;
+$.4C.4N.5D. := (Ckcs ?= 1) OR (Ckcs ?= 4) ;
+$.4C.4N.5H. := (Ckcs ?= 2) AND NOT Cq ;
+$.4C.4N.5S. := (Ckcs ?= 2) AND Cq ;
+
+$.4D.4H. := (Points >= 8) AND (Hearts >= 3) ;
+$.4D.4S. := (Points >= 8) AND (Spades >= 3) ;
+$.4D.4N. := $slamish ;
+$.4D.4N.5C. := (Dkcs ?= 0) OR (Dkcs ?= 3) ;
+$.4D.4N.5D. := (Dkcs ?= 1) OR (Dkcs ?= 4) ;
+$.4D.4N.5H. := (Dkcs ?= 2) AND NOT Dq ;
+$.4D.4N.5S. := (Dkcs ?= 2) AND Dq ;
+
+
+## ============================================================
+## IV.D  AFTER OUR TWO CLUBS
+## ============================================================
+
+$goodHearts := (Hearts >= 6) OR ((Hearts >= 5) AND (Hpts >= 5)) ;
+$goodSpades := (Spades >= 6) OR ((Spades >= 5) AND (Spts >= 5)) ;
+$goodDiamonds := (Diamonds >= 6) OR ((Diamonds >= 5) AND (Dpts >= 5)) ;
+$goodClubs := (Clubs >= 6) OR ((Clubs >= 5) AND (Cpts >= 5)) ;
+$ntAcceptable := $balanced AND (Points >= 8) ;
+$oneLoserHearts := (Hearts >= 6) AND (Hpts >= 7) ;
+$oneLoserSpades := (Spades >= 6) AND (Spts >= 7) ;
+$oneLoserDiamonds := (Diamonds >= 6) AND (Dpts >= 7) ;
+$oneLoserClubs := (Clubs >= 6) AND (Cpts >= 7) ;
+
+## Two diamonds denies a positive response (a strong suit -- six-plus
+## cards, or five headed by two of the top three honors -- or
+## notrump-acceptable values): the negative/waiting response.
+$.2C.2D. := NOT ($goodHearts OR $goodSpades OR $goodDiamonds OR $goodClubs OR $ntAcceptable) ;
+
+## Positive suit responses; a jump to the next tier (3H/3S/4C/4D)
+## shows a one-loser suit.
+$.2C.2H. := $goodHearts AND NOT $oneLoserHearts ;
+$.2C.3H. := $oneLoserHearts ;
+$.2C.2S. := $goodSpades AND NOT $oneLoserSpades ;
+$.2C.3S. := $oneLoserSpades ;
+$.2C.3C. := $goodClubs AND NOT $oneLoserClubs ;
+$.2C.4C. := $oneLoserClubs ;
+$.2C.3D. := $goodDiamonds AND NOT $oneLoserDiamonds ;
+$.2C.4D. := $oneLoserDiamonds ;
+$.2C.2N. := $ntAcceptable AND NOT ($goodHearts OR $goodSpades OR $goodDiamonds OR $goodClubs) ;
+
+## ---- Opener's rebids after the two-diamond negative/waiting
+## response ----
+
+## Simple natural suit rebids.
+$.2C.2D.2S. := (Spades >= 5) AND (Hearts < 5) ;
+$.2C.2D.3C. := (Clubs >= 5) AND (Hearts < 5) AND (Spades < 5) ;
+$.2C.2D.3D. := (Diamonds >= 5) AND (Hearts < 5) AND (Spades < 5) AND (Clubs < 5) ;
+
+## Two notrump: the strong-balanced continuation (22-24 HCP).
+$.2C.2D.2N. := $balanced AND (22 TO 24 Points) ;
+
+## Two hearts is Birthright: shown with real length in hearts, or with
+## the 25-plus balanced hand that has no better natural rebid.
+## Responder relays with two spades; opener bids two notrump with the
+## balanced game-going hand, or confirms hearts otherwise.
+$.2C.2D.2H. := (Hearts >= 5) OR ((Points >= 25) AND $balanced) ;
+$.2C.2D.2H.2S. := Points >= 0 ;
+$.2C.2D.2H.2S.2N. := (Points >= 25) AND $balanced ;
+$.2C.2D.2H.2S.3H. := (Hearts >= 5) AND NOT $balanced ;
+
+## After a simple new-suit rebid, responder's cheapest minor-suit bid
+## through three diamonds is a double negative; a new-suit single jump
+## is a splinter raise; a double raise is a picture bid (strong
+## trumps, little else). Spelled out after two spades as the
+## representative case; three clubs/three diamonds follow the
+## identical pattern.
+$.2C.2D.2S.3C. := Points <= 3 ;
+$.2C.2D.2S.3S. := (Spades >= 3) AND (4 TO 9 Points) AND
+                  (Hearts >= 1) AND (Diamonds >= 1) AND (Clubs >= 1) ;
+$.2C.2D.2S.4S. := (Spades >= 4) AND (Spts >= 3) AND (Points <= 6) ;
+$.2C.2D.2S.4C. := (Spades >= 3) AND (Clubs <= 1) AND (4 TO 9 Points) ;
+$.2C.2D.2S.4D. := (Spades >= 3) AND (Diamonds <= 1) AND (4 TO 9 Points) ;
+$.2C.2D.2S.4H. := (Spades >= 3) AND (Hearts <= 1) AND (4 TO 9 Points) ;
+
+
+## ============================================================
+## IV.E  AFTER OUR TWO-NOTRUMP-FAMILY OPENING
+## ============================================================
+## Applies after two notrump, after a 2C-2D-2N rebid, and after a
+## 2C-2D-2H-2S-2N rebid. Spelled out here for the two-notrump opening;
+## the other two parents follow the identical structure (one
+## illustrative rule each is given below rather than repeating the
+## whole tree).
+
+## Stayman.
+$.2N.3C. := (Spades >= 4) OR (Hearts >= 4) ;
+$.2N.3C.3D. := (Hearts < 4) AND (Spades < 4) ;
+$.2N.3C.3H. := Hearts >= 4 ;
+$.2N.3C.3S. := (Spades >= 4) AND (Hearts < 4) ;
+
+## Jacoby (three-level) transfers.
+$.2N.3D. := Hearts >= 5 ;
+$.2N.3D.3H. := Points >= 0 ;
+$.2N.3H. := (Spades >= 5) AND (Hearts < 5) ;
+$.2N.3H.3S. := Points >= 0 ;
+
+## After the transfer completes, a new-suit bid or a notrump bid is
+## natural; a self-raise to game is a slam try; a new-suit jump is an
+## autosplinter (a one-suiter with shortness in the bid suit).
+$.2N.3D.3H.4H. := (Hearts >= 6) AND $slamish ;
+$.2N.3D.3H.4C. := (Hearts >= 5) AND (Clubs <= 1) AND $gf ;
+$.2N.3D.3H.4D. := (Hearts >= 5) AND (Diamonds <= 1) AND $gf ;
+$.2N.3D.3H.3N. := (Hearts >= 5) AND $balanced AND (Points <= 10) ;
+$.2N.3H.3S.4S. := (Spades >= 6) AND $slamish ;
+$.2N.3H.3S.4C. := (Spades >= 5) AND (Clubs <= 1) AND $gf ;
+$.2N.3H.3S.4D. := (Spades >= 5) AND (Diamonds <= 1) AND $gf ;
+$.2N.3H.3S.3N. := (Spades >= 5) AND $balanced AND (Points <= 10) ;
+
+## Three spades: shows both minors.
+$.2N.3S. := (BMin >= 4) ;
+
+## Texas (four-level) transfers; four notrump after acceptance is
+## Key-Card Blackwood, a new suit there is Exclusion Key-Card
+## Blackwood.
+$.2N.4D. := Hearts >= 6 ;
+$.2N.4D.4H. := Points >= 0 ;
+$.2N.4H. := Spades >= 6 ;
+$.2N.4H.4S. := Points >= 0 ;
+
+## Gerber (four clubs asks for aces).
+$.2N.4C. := $slamish AND $noMajor4 ;
+$.2N.4C.4D. := $aces0 ;
+$.2N.4C.4H. := $aces1 ;
+$.2N.4C.4S. := $aces2 ;
+$.2N.4C.4N. := $aces3 ;
+
+## The identical structure recurs after 2C-2D-2N and after
+## 2C-2D-2H-2S-2N; one representative rule for each is given so the
+## parallel is explicit without repeating the whole tree.
+$.2C.2D.2N.3C. := (Spades >= 4) OR (Hearts >= 4) ;
+$.2C.2D.2H.2S.2N.3C. := (Spades >= 4) OR (Hearts >= 4) ;
+
+
+## ============================================================
+## IV.F  AFTER OUR ONE-NOTRUMP OPENING
+## ============================================================
+
+## ---- Jacoby (two-level) transfers ----
+$.1N.2D. := Hearts >= 5 ;
+$.1N.2H. := (Spades >= 5) AND (Hearts < 5) ;
+
+## Accepting a transfer is mechanical here (superacceptance with extra
+## trump length/strength is not separately distinguished).
+$.1N.2D.2H. := Points >= 0 ;
+$.1N.2H.2S. := Points >= 0 ;
+
+## After the transfer, a notrump bid or a new-suit bid by responder is
+## natural; a self-raise to three is invitational, to four is a slam
+## try; a new-suit jump is an autosplinter.
+$.1N.2D.2H.2N. := (Hearts ?= 5) AND (8 TO 9 Points) AND $noMajor4 ;
+$.1N.2D.2H.3N. := (Hearts ?= 5) AND (10 TO 15 Points) AND $noMajor4 ;
+$.1N.2D.2H.3H. := (Hearts >= 6) AND (8 TO 9 Points) ;
+$.1N.2D.2H.4H. := (Hearts >= 6) AND $slamish ;
+$.1N.2D.2H.4C. := (Hearts >= 5) AND (Clubs <= 1) AND $gf ;
+$.1N.2D.2H.4D. := (Hearts >= 5) AND (Diamonds <= 1) AND $gf ;
+
+## Transferring to hearts, then bidding two spades: at least four
+## spades, at least five hearts, game-invitational-plus -- the only
+## way to invite game with 4=5 in the majors. Opener signs off with a
+## minimum, bids on (game-forcing) with extra.
+$.1N.2D.2H.2S. := (Spades >= 4) AND (Hearts >= 5) AND (Points >= 10) ;
+$.1N.2D.2H.2S.2N. := (12 TO 14 Points) AND (Hearts >= 2) ;
+$.1N.2D.2H.2S.3H. := (12 TO 14 Points) AND (Hearts >= 3) ;
+$.1N.2D.2H.2S.3S. := (12 TO 14 Points) AND (Spades >= 3) ;
+$.1N.2D.2H.2S.3C. := 15 TO 17 Points ;
+
+## Transferring to spades, then bidding hearts, shows at least 5=5 in
+## the majors.
+$.1N.2H.2S.3H. := (Spades >= 5) AND (Hearts >= 5) ;
+
+## ---- Stayman: possibly a weak hand; opener with both majors always
+## bids two hearts ----
+$.1N.2C. := (Spades >= 4) OR (Hearts >= 4) OR (Points <= 6) ;
+$.1N.2C.2D. := (Hearts < 4) AND (Spades < 4) ;
+$.1N.2C.2H. := Hearts >= 4 ;
+$.1N.2C.2S. := (Spades >= 4) AND (Hearts < 4) ;
+
+## Responder's continuations over two diamonds (no major): three of a
+## minor is natural and forcing; three of a major over two diamonds is
+## Smolen (four of the bid major, five of the other).
+$.1N.2C.2D.2H. := (Points <= 7) AND ((Hearts >= 4) OR (Spades >= 4)) ;
+$.1N.2C.2D.3C. := (Clubs >= 5) AND $gf ;
+$.1N.2C.2D.3D. := (Diamonds >= 5) AND $gf ;
+$.1N.2C.2D.3H. := (Hearts >= 4) AND (Spades >= 5) AND $gf ;
+$.1N.2C.2D.3S. := (Spades >= 4) AND (Hearts >= 5) AND $gf ;
+$.1N.2C.2D.4C. := (Spades ?= 6) AND (Hearts ?= 4) ;
+$.1N.2C.2D.4D. := (Spades ?= 4) AND (Hearts ?= 6) ;
+
+## Responder's continuations over two hearts: three of a major is
+## invitational as a direct raise, or a slam try in opener's major
+## with an unspecified splinter if bid in the unbid major (opener's
+## cheapest bid relays; responder shows the short suit in steps).
+$.1N.2C.2H.2S. := (Spades >= 4) AND (Points >= 9) ;
+$.1N.2C.2H.3H. := (Hearts >= 3) AND (8 TO 9 Points) ;
+$.1N.2C.2H.4H. := (Hearts >= 3) AND (Points >= 10) ;
+$.1N.2C.2H.3N. := (Hearts < 3) AND (Spades < 4) AND (10 TO 14 Points) ;
+$.1N.2C.2H.3S. := (Hearts >= 3) AND $slamish AND
+                  ((Spades <= 1) OR (Diamonds <= 1) OR (Clubs <= 1)) ;
+$.1N.2C.2H.3S.3N. := Points >= 0 ;
+$.1N.2C.2H.3S.3N.4C. := Clubs <= 1 ;
+$.1N.2C.2H.3S.3N.4D. := Diamonds <= 1 ;
+$.1N.2C.2H.3S.3N.4H. := Spades <= 1 ;
+
+## Four clubs is a key-card-ask when opener has shown a major; four
+## diamonds is a slam try in opener's major with no short suit.
+$.1N.2C.2H.4C. := (Hearts >= 3) AND $slamish ;
+$.1N.2C.2H.4C.4D. := (Hkcs ?= 0) OR (Hkcs ?= 3) ;
+$.1N.2C.2H.4C.4H. := (Hkcs ?= 1) OR (Hkcs ?= 4) ;
+$.1N.2C.2H.4C.4S. := (Hkcs ?= 2) AND NOT Hq ;
+$.1N.2C.2H.4C.4N. := (Hkcs ?= 2) AND Hq ;
+$.1N.2C.2H.4D. := (Hearts >= 3) AND $slamish AND
+                  (Spades >= 1) AND (Diamonds >= 1) AND (Clubs >= 1) ;
+
+## Responder's continuations over two spades (denies four hearts).
+$.1N.2C.2S.3S. := (Spades >= 3) AND (8 TO 9 Points) ;
+$.1N.2C.2S.4S. := (Spades >= 3) AND (Points >= 10) ;
+$.1N.2C.2S.3N. := (Spades < 3) AND (10 TO 14 Points) ;
+$.1N.2C.2S.3H. := (Spades >= 3) AND $slamish AND
+                  ((Diamonds <= 1) OR (Clubs <= 1) OR (Hearts <= 1)) ;
+$.1N.2C.2S.3H.3N. := Points >= 0 ;
+$.1N.2C.2S.3H.3N.4C. := Clubs <= 1 ;
+$.1N.2C.2S.3H.3N.4D. := Diamonds <= 1 ;
+$.1N.2C.2S.3H.3N.4H. := Hearts <= 1 ;
+$.1N.2C.2S.4C. := (Spades >= 3) AND $slamish ;
+$.1N.2C.2S.4C.4D. := (Skcs ?= 0) OR (Skcs ?= 3) ;
+$.1N.2C.2S.4C.4H. := (Skcs ?= 1) OR (Skcs ?= 4) ;
+$.1N.2C.2S.4C.4S. := (Skcs ?= 2) AND NOT Sq ;
+$.1N.2C.2S.4C.4N. := (Skcs ?= 2) AND Sq ;
+$.1N.2C.2S.4D. := (Spades >= 3) AND $slamish AND
+                  (Hearts >= 1) AND (Diamonds >= 1) AND (Clubs >= 1) ;
+
+## ---- Modified four-suit transfers filling the remaining calls:
+## two spades / two notrump locate a weak minor one-suiter, three
+## clubs shows both minors weak, three of another suit shows both
+## minors strong with an indicated shortness. (The dual "range
+## inquiry" reading of two spades over a balanced 8-9 hand is a
+## second, context-dependent meaning of the same call that this file
+## does not separately encode.) ----
+$.1N.2S. := (Clubs >= 5) AND $noMajor4 AND (Points <= 9) ;
+$.1N.2S.3C. := Points >= 0 ;
+$.1N.2S.3C.3D. := (Clubs >= 5) AND (Diamonds <= 1) ;
+$.1N.2S.3C.3H. := (Clubs >= 5) AND (Hearts <= 1) ;
+$.1N.2S.3C.3S. := (Clubs >= 5) AND (Spades <= 1) ;
+
+$.1N.2N. := (Diamonds >= 5) AND $noMajor4 AND (Points <= 9) ;
+
+$.1N.3C. := (Clubs >= 4) AND (Diamonds >= 4) AND $noMajor4 AND (Points <= 9) ;
+$.1N.3D. := (Clubs >= 4) AND (Diamonds >= 4) AND $noMajor4 AND (Points >= 10) ;
+$.1N.3H. := (Clubs >= 4) AND (Diamonds >= 4) AND (Points >= 10) AND (Spades <= 1) ;
+$.1N.3S. := (Clubs >= 4) AND (Diamonds >= 4) AND (Points >= 10) AND (Hearts <= 1) ;
+
+## ---- Signoff and quantitative notrump responses ----
+$.1N.P. := (Points <= 7) AND $balanced ;
+$.1N.3N. := $balNoMajor AND (10 TO 14 Points) ;
+$.1N.4N. := $balNoMajor AND (15 TO 16 Points) ;
+
+## ---- Texas (four-level) transfers; four notrump after acceptance
+## is Key-Card Blackwood ----
+$.1N.4D. := (Hearts >= 6) AND (9 TO 11 Points) ;
+$.1N.4H. := (Spades >= 6) AND (9 TO 11 Points) ;
+$.1N.4D.4H. := Points >= 0 ;
+$.1N.4H.4S. := Points >= 0 ;
+$.1N.4D.4H.4N. := $slamish ;
+$.1N.4D.4H.4N.5C. := (Hkcs ?= 0) OR (Hkcs ?= 3) ;
+$.1N.4D.4H.4N.5D. := (Hkcs ?= 1) OR (Hkcs ?= 4) ;
+$.1N.4D.4H.4N.5H. := (Hkcs ?= 2) AND NOT Hq ;
+$.1N.4D.4H.4N.5S. := (Hkcs ?= 2) AND Hq ;
+
+## ---- Gerber ----
+$.1N.4C. := $slamish AND $noMajor4 ;
+$.1N.4C.4D. := $aces0 ;
+$.1N.4C.4H. := $aces1 ;
+$.1N.4C.4S. := $aces2 ;
+$.1N.4C.4N. := $aces3 ;
+
+
+## ============================================================
+## IV.G  AFTER OUR MAJOR-SUIT OPENING
+## ============================================================
+## Responder is an unpassed hand throughout; BWS's separate
+## passed-hand responder table is not separately encoded.
+
+## ---- Notrump / raise structure (symmetric between the majors) ----
+
+## One notrump: semiforcing, at most game-invitational strength;
+## opener may pass with 5-3-3-2 or 4=5=2=2 and a hand no stronger than
+## 12 HCP.
+$.1Maj.1N. := (OMaj < 4) AND
+              (((5 TO 12 Points) AND (Maj <= 2)) OR
+               ((Maj ?= 3) AND ((Points ?= 7) OR (10 TO 12 Points)))) ;
+
+## Single raise: moderately constructive, three-plus trump.
+$.1Maj.2Maj. := (Maj >= 3) AND (6 TO 9 Points) ;
+
+## Double raise: invitational, four-plus trump.
+$.1Maj.3Maj. := (Maj >= 4) AND (10 TO 12 Points) ;
+
+## Triple raise: weak preemptive game raise.
+$.1Maj.4Maj. := (Maj >= 5) AND (Points <= 6) ;
+
+## Two notrump (no side shortness) shows game-forcing strength with a
+## four-card-plus fit (the new-suit-double-jump splinter alternative
+## is written out per opening below, since the splinter suit differs).
+$.1Maj.2N. := (Maj >= 4) AND $gf AND
+              (Spades >= 1) AND (Hearts >= 1) AND (Diamonds >= 1) AND (Clubs >= 1) ;
+
+## Three notrump: a weak preemptive raise showing some defensive
+## strength (a stray honor trick).
+$.1Maj.3N. := (Maj >= 4) AND (7 TO 9 Points) AND (Controls >= 2) ;
+
+## ---- One heart responses ----
+
+$.1H.1S. := (Points >= 5) AND (Spades >= 4) ;
+$.1H.2C. := $gf AND (Clubs >= 5) ;
+$.1H.2D. := $gf AND (Diamonds >= 5) ;
+
+## Two spades: a strong jump-shift -- more than ordinary game-going
+## strength (16-plus HCP equivalent), a substantial suit (five-plus
+## cards with two of the top three honors); one of BWS's three hand
+## types (balanced/one-suited/support) is approximated here by
+## strength and suit quality alone.
+$.1H.2S. := (Points >= 16) AND (Spades >= 5) AND (Spts >= 6) ;
+
+## Jump-shift to three of an underranking suit: invitational.
+$.1H.3C. := (Clubs >= 6) AND (10 TO 12 Points) ;
+$.1H.3D. := (Diamonds >= 6) AND (10 TO 12 Points) ;
+
+## Double jump-shift: splinter.
+$.1H.4C. := (Hearts >= 4) AND (Clubs <= 1) AND $gf ;
+$.1H.4D. := (Hearts >= 4) AND (Diamonds <= 1) AND $gf ;
+
+## Triple jump-shift is Exclusion Key-Card Blackwood, except that one
+## heart - four spades is natural (preemptive in nature).
+$.1H.4S. := (Hearts >= 5) AND (Points <= 8) AND (Spades <= 1) ;
+
+## ---- One spade responses ----
+
+## Two-over-one (includes two hearts, since hearts ranks below
+## spades): forcing to game.
+$.1S.2C. := $gf AND (Clubs >= 5) ;
+$.1S.2D. := $gf AND (Diamonds >= 5) ;
+$.1S.2H. := $gf AND (Hearts >= 5) ;
+
+$.1S.3C. := (Clubs >= 6) AND (10 TO 12 Points) ;
+$.1S.3D. := (Diamonds >= 6) AND (10 TO 12 Points) ;
+$.1S.3H. := (Hearts >= 6) AND (10 TO 12 Points) ;
+
+$.1S.4C. := (Spades >= 4) AND (Clubs <= 1) AND $gf ;
+$.1S.4D. := (Spades >= 4) AND (Diamonds <= 1) AND $gf ;
+$.1S.4H. := (Spades >= 4) AND (Hearts <= 1) AND $gf ;
+
+## ---- Opener's rebids after a one-spade response to one heart ----
+$.1H.1S.1N. := (12 TO 14 Points) AND $balanced ;
+$.1H.1S.2N. := (18 TO 19 Points) AND $balanced ;
+$.1H.1S.3N. := (Hearts >= 6) AND (Hpts >= 7) ;
+$.1H.1S.4H. := (Hearts >= 6) AND $slamish ;
+$.1H.1S.4C. := (Hearts >= 5) AND (Spades >= 4) AND (Clubs <= 1) AND $gf ;
+$.1H.1S.4D. := (Hearts >= 5) AND (Spades >= 4) AND (Diamonds <= 1) AND $gf ;
+
+## One heart - one notrump - two spades is forcing.
+$.1H.1N.2S. := (Hearts >= 5) AND (Spades >= 4) AND (Points <= 17) ;
+
+## One of a major - one notrump - two notrump is invitational.
+$.1Maj.1N.2N. := (14 TO 15 Points) AND $balanced ;
+
+## ---- After a two-over-one response, a reverse or a non-jump
+## three-level new-suit bid shows extra strength; two notrump or a
+## single raise may be based on a minimum. ----
+$.1H.2C.2H. := (Hearts >= 6) AND (Points <= 17) ;
+$.1H.2C.2N. := (Points <= 17) AND $balanced ;
+$.1H.2C.3C. := (Hearts >= 5) AND (Clubs >= 3) AND (Points <= 17) ;
+$.1H.2C.2S. := (Hearts >= 5) AND (Spades >= 4) AND (Points >= 16) ;
+$.1H.2C.3D. := (Hearts >= 5) AND (Diamonds >= 4) AND (Points >= 16) ;
+$.1S.2C.2S. := (Spades >= 6) AND (Points <= 17) ;
+$.1S.2C.2N. := (Points <= 17) AND $balanced ;
+$.1S.2C.3C. := (Spades >= 5) AND (Clubs >= 3) AND (Points <= 17) ;
+$.1S.2C.2D. := (Spades >= 5) AND (Diamonds >= 4) AND (Points >= 16) ;
+$.1S.2C.2H. := (Spades >= 5) AND (Hearts >= 4) AND (Points >= 16) ;
+
+## ---- After a two-notrump forcing raise: a simple new-suit bid
+## shows shortness, a new-suit jump shows a two-suiter, and the three
+## other game-and-below bids (simple same-suit rebid / three notrump /
+## jump same-suit rebid) deny any new-suit bid's requirements, graded
+## strongest to weakest (cheapest strongest). ----
+$.1H.2N.3C. := (Hearts >= 4) AND (Clubs <= 1) ;
+$.1H.2N.3D. := (Hearts >= 4) AND (Diamonds <= 1) ;
+$.1H.2N.3S. := (Hearts >= 4) AND (Spades <= 1) ;
+$.1H.2N.4C. := (Hearts >= 4) AND (Clubs >= 5) AND (Spades >= 5) ;
+$.1H.2N.4D. := (Hearts >= 4) AND (Diamonds >= 5) AND (Spades >= 5) ;
+$.1H.2N.3H. := (Hearts >= 6) AND (18 TO 20 Points) ;
+$.1H.2N.3N. := (Hearts >= 6) AND (21 TO 23 Points) ;
+$.1H.2N.4H. := (Hearts >= 6) AND (Points >= 24) ;
+
+$.1S.2N.3C. := (Spades >= 4) AND (Clubs <= 1) ;
+$.1S.2N.3D. := (Spades >= 4) AND (Diamonds <= 1) ;
+$.1S.2N.3H. := (Spades >= 4) AND (Hearts <= 1) ;
+$.1S.2N.4C. := (Spades >= 4) AND (Clubs >= 5) AND (Hearts >= 5) ;
+$.1S.2N.4D. := (Spades >= 4) AND (Diamonds >= 5) AND (Hearts >= 5) ;
+$.1S.2N.3S. := (Spades >= 6) AND (18 TO 20 Points) ;
+$.1S.2N.3N. := (Spades >= 6) AND (21 TO 23 Points) ;
+$.1S.2N.4S. := (Spades >= 6) AND (Points >= 24) ;
+
+## ---- After a direct, game-invitational raise to three of opener's
+## major: the cheapest bid asks for shortness. "One heart - three
+## hearts - three notrump" is a control-bid in spades. ----
+$.1H.3H.3N. := (Hearts >= 5) AND (Sa OR Sk) AND $slamish ;
+$.1H.3H.4C. := (Hearts >= 5) AND $slamish AND NOT (Sa OR Sk) AND (Ca OR Ck) AND NOT (Da OR Dk) ;
+$.1H.3H.4D. := (Hearts >= 5) AND $slamish AND NOT (Sa OR Sk) AND (Da OR Dk) ;
+$.1S.3S.4C. := (Spades >= 5) AND $slamish AND (Ca OR Ck) AND NOT ((Da OR Dk) OR (Ha OR Hk)) ;
+$.1S.3S.4D. := (Spades >= 5) AND $slamish AND (Da OR Dk) AND NOT (Ha OR Hk) ;
+$.1S.3S.4H. := (Spades >= 5) AND $slamish AND (Ha OR Hk) ;
+
+## ---- Selected named continuations from "Later actions" ----
+
+## One heart - one notrump - two of a minor - ?, two spades is a
+## strong raise of opener's minor, forcing to three of opener's minor.
+$.1H.1N.2C.2S. := (Clubs >= 3) AND $gf ;
+$.1H.1N.2D.2S. := (Diamonds >= 3) AND $gf ;
+
+## One heart - one notrump - two clubs - ?, three diamonds shows long
+## diamonds in a hand improved by the two-club bid.
+$.1H.1N.2C.3D. := (Diamonds >= 5) AND (10 TO 12 Points) ;
+
+## One spade - one notrump - two diamonds - ?, three hearts is a
+## strong raise of diamonds, unrelated to hearts.
+$.1S.1N.2D.3H. := (Diamonds >= 3) AND $gf ;
+
+## One spade - one notrump - two clubs - ?, a two-diamond rebid is
+## Bart: artificially, temporarily suggesting five hearts, converting
+## responder's natural rebids to show stronger hands than the same
+## action taken directly.
+$.1S.1N.2C.2D. := Points >= 0 ;
+
+
+## ============================================================
+## IV.H  AFTER OUR MINOR-SUIT OPENING
+## ============================================================
+## Responder is an unpassed hand throughout; BWS's separate
+## passed-hand responder table is not separately encoded.
+
+## ---- Responses to one club ----
+
+## With four of a major and four-plus diamonds: bid the major with
+## exactly four diamonds; bid one diamond (else the major) with five
+## diamonds at invitational-plus values; bid one diamond with six
+## diamonds.
+$.1C.1H. := (Points >= 5) AND (Hearts >= 4) AND (Spades < 4) AND
+            NOT ((Diamonds >= 5) AND (Points >= 10)) ;
+$.1C.1S. := (Points >= 5) AND (Spades >= 4) AND
+            NOT ((Diamonds >= 5) AND (Points >= 10) AND (Hearts < 4)) ;
+$.1C.1D. := (Points >= 5) AND (Diamonds >= 4) AND
+            (((Spades < 4) AND (Hearts < 4)) OR (Diamonds >= 6) OR
+             ((Diamonds ?= 5) AND (Points >= 10))) ;
+$.1C.1N. := (6 TO 10 Points) AND $noMajor4 AND (Diamonds <= 3) ;
+
+## Jump-shift to the two level is limited with a major (5+ spades/4+
+## hearts: game-invitational for two spades, weaker for two hearts);
+## strong if two diamonds (per the section-G strong-jump-shift
+## requirements: 16-plus HCP equivalent with a substantial suit).
+$.1C.2H. := (Hearts >= 4) AND (Spades < 5) AND (8 TO 11 Points) ;
+$.1C.2S. := (Spades >= 5) AND (10 TO 12 Points) ;
+$.1C.2D. := (Points >= 16) AND (Diamonds >= 5) AND (Dpts >= 6) ;
+
+$.1C.2N. := $balNoMajor AND $inv ;
+$.1C.3C. := (Clubs >= 4) AND (13 TO 15 Points) AND $noMajor4 ;
+$.1C.4C. := (Clubs >= 5) AND (5 TO 9 Points) ;
+$.1C.4H. := (Clubs >= 4) AND (Hearts <= 1) AND $gf ;
+$.1C.4S. := (Clubs >= 4) AND (Spades <= 1) AND $gf ;
+$.1C.3N. := $balanced AND (16 TO 17 Points) AND $noMajor4 ;
+
+## ---- Responses to one diamond ----
+
+$.1D.1H. := (Points >= 5) AND (Hearts >= 4) ;
+$.1D.1S. := (Points >= 5) AND (Spades >= 4) AND (Hearts < 4) ;
+$.1D.1N. := (6 TO 10 Points) AND $noMajor4 ;
+$.1D.2C. := $gf AND (Clubs >= 4) ;
+$.1D.3C. := (Clubs >= 5) AND (10 TO 12 Points) ;
+$.1D.2N. := $balNoMajor AND $inv ;
+$.1D.3D. := (Diamonds >= 4) AND (13 TO 15 Points) AND $noMajor4 ;
+$.1D.4D. := (Diamonds >= 5) AND (5 TO 9 Points) ;
+$.1D.4C. := (Diamonds >= 4) AND (Clubs <= 1) AND $gf ;
+$.1D.4H. := (Diamonds >= 4) AND (Hearts <= 1) AND $gf ;
+$.1D.4S. := (Diamonds >= 4) AND (Spades <= 1) AND $gf ;
+$.1D.3N. := $balanced AND (16 TO 17 Points) AND $noMajor4 ;
+
+## ---- Opener's rebids ----
+
+## Balanced notrump-rebid ranges, matching the scheme used for
+## majors: minimum (12-14) and strong-jump (18-19).
+$.1C.1D.1N. := (12 TO 14 Points) AND $balanced ;
+$.1C.1D.2N. := (18 TO 19 Points) AND $balanced ;
+$.1C.1H.1N. := (12 TO 14 Points) AND $balanced AND (Hearts < 4) ;
+$.1C.1H.2N. := (18 TO 19 Points) AND $balanced AND (Hearts < 4) ;
+$.1D.1H.1N. := (12 TO 14 Points) AND $balanced ;
+$.1D.1H.2N. := (18 TO 19 Points) AND $balanced ;
+$.1D.1S.1N. := (12 TO 14 Points) AND $balanced ;
+$.1D.1S.2N. := (18 TO 19 Points) AND $balanced ;
+
+## Opener's reverse after a one-notrump response is forcing; a reverse
+## after a one-level suit response is forcing and promises a rebid
+## below game.
+$.1C.1N.2D. := (Clubs >= 4) AND (Diamonds >= 4) AND (Points >= 17) ;
+$.1C.1D.2H. := (Clubs >= 4) AND (Hearts >= 4) AND (Points >= 17) AND NOT $balanced ;
+$.1D.1H.2S. := (Diamonds >= 5) AND (Spades >= 4) AND (15 TO 18 Points) ;
+
+## After a one-of-a-suit response, opener's double-jump rebid in his
+## own suit shows a game-forcing raise with strong four-card support
+## and a long, strong (typically six-card) suit.
+$.1C.1D.4C. := (Diamonds >= 4) AND (Clubs >= 6) AND (Cpts >= 7) ;
+$.1D.1H.4D. := (Hearts >= 4) AND (Diamonds >= 6) AND (Dpts >= 7) ;
+
+## After a strong single minor raise, opener may show willingness to
+## play in three of his minor (minimum), bid two notrump natural (but
+## forced to three of the minor), or bid a new suit.
+$.1C.3C.3D. := (Clubs >= 4) AND (Diamonds >= 4) AND (16 TO 19 Points) ;
+$.1C.3C.3N. := (Clubs >= 4) AND $balanced AND (18 TO 19 Points) ;
+
+## After a two-notrump response: a same-suit rebid is nonforcing; a
+## new-suit bid of three clubs is natural and forcing; a three-level
+## reverse shows a short suit.
+$.1D.2N.3D. := (Diamonds >= 6) AND (14 TO 16 Points) ;
+$.1D.2N.3C. := (Diamonds >= 4) AND (Clubs >= 4) AND (Points >= 14) ;
+$.1D.2N.3H. := (Diamonds >= 5) AND (Hearts <= 1) AND (Points >= 14) ;
+$.1D.2N.3S. := (Diamonds >= 5) AND (Spades <= 1) AND (Points >= 14) ;
+
+
+## ============================================================
+## IV.I  AFTER ANY SUIT ONE-BID
+## ============================================================
+## This section's rules are general patterns that recur after every
+## one-level opening and one-level new-suit response; BWS states them
+## generically rather than per specific auction. Given the
+## combinatorial number of concrete auctions they could attach to,
+## they are implemented here on a representative auction for each
+## rule rather than exhaustively for every opening/response
+## combination.
+
+## With 4=3=5=1 or 4=3=1=5 distribution, opener should rebid spades
+## after a one-heart response.
+$.1C.1H.1S. := (Spades ?= 4) AND (Hearts ?= 3) AND ((Diamonds ?= 5) OR (Diamonds ?= 1)) ;
+$.1D.1H.1S. := (Spades ?= 4) AND (Hearts ?= 3) AND ((Clubs ?= 5) OR (Clubs ?= 1)) ;
+
+## Fourth-suit forcing (representative auction: one club - one
+## diamond - one heart - ?; one spade shows spades and is an
+## artificial fourth-suit game force; a fourth-suit bid at the
+## two/three level is forcing to game generally).
+$.1C.1D.1H.1S. := (Points >= 12) AND
+                  NOT ((Spades ?= 4) AND (Hearts ?= 3) AND ((Diamonds ?= 5) OR (Diamonds ?= 1))) ;
+$.1C.1D.1H.2N. := (10 TO 11 Points) AND (Spades < 4) AND $balanced ;
+$.1C.1D.1H.3D. := (Diamonds >= 3) AND (10 TO 11 Points) AND (Spades < 4) ;
+$.1C.1D.1H.3H. := (Hearts >= 3) AND (10 TO 11 Points) ;
+
+## A bid one level above a game-forcing fourth-suit bid is a splinter.
+$.1C.1D.1H.1S.1N. := (Hearts >= 3) AND (12 TO 14 Points) AND $balanced ;
+$.1C.1D.1H.1S.2C. := (Hearts >= 3) AND (Clubs >= 5) AND (12 TO 16 Points) ;
+$.1C.1D.1H.1S.3C. := (Hearts >= 3) AND (Clubs <= 1) AND $gf ;
+
+## ---- After opener's one-notrump rebid: responder's two-club rebid
+## is a puppet to two diamonds; responder's two-diamond rebid is a
+## game-forcing checkback. ----
+$.1C.1D.1N.2C. := Points >= 0 ;
+$.1C.1D.1N.2C.2D. := Points >= 0 ;
+$.1C.1D.1N.2D. := $gf ;
+$.1C.1D.1N.2C.2D.2H. := (Hearts >= 4) AND (5 TO 9 Points) ;
+$.1C.1D.1N.2C.2D.2S. := (Spades >= 4) AND (Hearts < 4) AND (5 TO 9 Points) ;
+$.1C.1D.1N.2C.2D.2N. := (5 TO 9 Points) AND (Hearts < 4) AND (Spades < 4) ;
+$.1C.1D.1N.2C.2D.3C. := (Clubs >= 6) AND (5 TO 9 Points) ;
+
+## Three of the cheapest unbid minor is weak; four clubs is Gerber.
+$.1C.1D.1N.3D. := (Diamonds >= 6) AND (Points <= 8) ;
+$.1C.1D.1N.4C. := $slamish AND $balanced ;
+$.1C.1D.1N.4C.4D. := $aces0 ;
+$.1C.1D.1N.4C.4H. := $aces1 ;
+$.1C.1D.1N.4C.4S. := $aces2 ;
+$.1C.1D.1N.4C.4N. := $aces3 ;
+
+## ---- After a one-level suit response and opener's simple same-suit
+## rebid: a third-suit bid that is a reverse or a three-level bid is
+## forcing to game; a non-reverse third-suit bid at the two level is
+## forcing for one round. (Representative auction: one diamond - one
+## heart - two diamonds - ?.) ----
+$.1D.1H.2D.2S. := (Spades >= 4) AND (Points >= 4) ;
+$.1D.1H.2D.3H. := (Hearts >= 5) AND (8 TO 10 Points) ;
+$.1D.1H.2D.2N. := (8 TO 10 Points) AND $balanced ;
+
+## A bid one level above a game-forcing third-suit bid is a splinter.
+$.1D.1H.2D.2S.3S. := (Hearts >= 5) AND (Spades <= 1) AND $gf ;
+
+## ---- After a one-level new-suit response and opener's
+## further-bid-promising reverse: any rebid by responder is forcing to
+## game except two of his original suit and the cheaper of a
+## fourth-suit bid and two notrump. (Representative auction: one
+## diamond - one heart - two spades - ?, a reverse.) ----
+$.1D.1H.2S.2N. := (8 TO 10 Points) AND (Spades < 3) ;
+$.1D.1H.2S.3D. := (Diamonds >= 3) AND $gf ;
+$.1D.1H.2S.3H. := (Hearts >= 6) AND $gf ;
+
+## ---- After a one-notrump response and opener's reverse: responder's
+## rebids of two notrump, three of opener's first-bid suit, and three
+## of a suit ranking below opener's original suit are nonforcing. ----
+$.1D.1N.2H.2N. := (8 TO 9 Points) AND $balanced ;
+$.1D.1N.2H.3D. := (Diamonds >= 3) AND (8 TO 9 Points) ;
+END

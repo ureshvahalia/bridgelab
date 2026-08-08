@@ -1,0 +1,1122 @@
+## ============================================================
+## Uresh-Vivek Precision (2nd edition)
+## Transcribed from bidlab/input/Uresh-Vivek Precision2.pdf, for use
+## with the Bidder rule language (see shared/hand-spec.md).
+##
+## SCOPE: this file covers the uncontested partnership auction --
+## opening bids and the responses/rebids that follow when the
+## opponents pass throughout. As with bws_input.txt, competitive
+## material is omitted by request, and because this rule language has
+## no token for an opposing call in a "$." sequence anyway:
+##   - Ch 2.3 (Dealing with Intervention, after 1N)
+##   - Ch 7 (Dealing with intervention over 1C)
+##   - Ch 14 / 14.1 (When Opponents Open / Preempt)
+##   - Ch 15 (Competitive Auctions: support doubles, NFB, responsive
+##     doubles, maximal doubles, cue bids in defense, etc.)
+##   - Ch 16 (Competitive Lebensohl)
+## Ch 17 (Bidding by a Passed Hand) describes alternate meanings for a
+## hand that has already passed; this language has no notion of
+## "passed hand" as a distinct hand property, so it isn't separately
+## encoded either.
+## Ch 18/19 (change log, open issues) are meta-commentary, not bids.
+## Ch 20 (Discontinued Sequences) is explicitly superseded by Ch 5/6
+## in the source document and is skipped entirely for that reason --
+## including it would silently contradict the current-system rules
+## given earlier in the same chapters.
+##
+## COLOR-CODING IN THE SOURCE: black = normal current text, red =
+## changes to the original system (both treated as current/binding
+## here), blue = unusual treatments worth a comment. Purple ("proposed
+## changes, not discussed or agreed") is not part of the agreed
+## system and is omitted -- it only occurs in the competitive
+## material anyway.
+##
+## DEPTH: this is an unusually deep relay-based system (Control-Asking
+## Bids, Trump-Asking Bids, Special Trump-Asking Bids, Epsilon Bids,
+## the Queen/Jack Asking Relay, the Telescope Ask, the 4CD convention,
+## and multi-level "zoom" distributional relays after 1C - 2C/2D/2H).
+## These are generic step-response protocols layered on top of
+## whatever auction established them; exhaustively enumerating every
+## auction they can attach to (the source's own Ch 20.3-20.7 alone
+## runs to pages of tables) would run to thousands of lines. They are
+## implemented here at the positions explicitly named in the source
+## -- the clearest, most central instances -- and otherwise documented
+## as named conventions: the general step-reply pattern is given once,
+## near its first use, rather than repeated at every attachment point.
+##
+## ARITHMETIC LIMITATION (as in bws_input.txt): the rule language has
+## no addition operator over card-presence booleans, so a true Double
+## Key-Card (both-suits-at-once) response, and 4CD-style multi-strain
+## asks beyond the concrete cases spelled out in the source, can't be
+## built from the available primitives; only single-suit KCB/Kickback
+## is fully modeled.
+## ============================================================
+
+
+## ============================================================
+## HELPERS
+## ============================================================
+
+$Any := Points >= 0 ;
+
+$balanced := shape [4,3,3,3] OR shape [4,4,3,2] OR shape [5,3,3,2] ;
+## 5-4-2-2 / 6-3-2-2 only count as notrump shape here when the long
+## suit is a minor (Ch 2 requirement); "if 6-carded it should be weak"
+## is a judgment call with no HCP-based representation and is not
+## separately modeled.
+$semiBalMinor := (shape [5,4,2,2] AND ((Clubs ?= 5) OR (Diamonds ?= 5))) OR
+                 (shape [6,3,2,2] AND ((Clubs ?= 6) OR (Diamonds ?= 6))) ;
+$ntShape := $balanced OR $semiBalMinor ;
+$noMajor4 := (Spades < 4) AND (Hearts < 4) ;
+$noMajor5 := (Spades < 5) AND (Hearts < 5) ;
+
+## ---- Ace-count helpers (Gerber / plain Blackwood; no native "how
+## many aces" keyword). ----
+$aces0 := NOT Sa AND NOT Ha AND NOT Da AND NOT Ca ;
+$aces1 := (Sa AND NOT Ha AND NOT Da AND NOT Ca) OR
+          (NOT Sa AND Ha AND NOT Da AND NOT Ca) OR
+          (NOT Sa AND NOT Ha AND Da AND NOT Ca) OR
+          (NOT Sa AND NOT Ha AND NOT Da AND Ca) ;
+$aces2 := (Sa AND Ha AND NOT Da AND NOT Ca) OR
+          (Sa AND NOT Ha AND Da AND NOT Ca) OR
+          (Sa AND NOT Ha AND NOT Da AND Ca) OR
+          (NOT Sa AND Ha AND Da AND NOT Ca) OR
+          (NOT Sa AND Ha AND NOT Da AND Ca) OR
+          (NOT Sa AND NOT Ha AND Da AND Ca) ;
+$aces3 := (NOT Sa AND Ha AND Da AND Ca) OR
+          (Sa AND NOT Ha AND Da AND Ca) OR
+          (Sa AND Ha AND NOT Da AND Ca) OR
+          (Sa AND Ha AND Da AND NOT Ca) ;
+$aces4 := Sa AND Ha AND Da AND Ca ;
+
+## ---- Control-count step helpers (A = 2, K = 1) for Control-Asking
+## Bids (Ch 4). ----
+$ctl0 := Controls ?= 0 ;
+$ctl1 := Controls ?= 1 ;
+$ctl2 := Controls ?= 2 ;
+$ctl3 := Controls ?= 3 ;
+$ctl4 := Controls ?= 4 ;
+$ctl5 := Controls ?= 5 ;
+$ctl6 := Controls >= 6 ;
+
+$gf := Points >= 13 ;
+$inv := 10 TO 12 Points ;
+$slamish := (Points >= 12) AND (Controls >= 4) ;
+
+
+## ============================================================
+## Ch 1: OPENING BIDS
+## ============================================================
+
+## One club: 17+ HCP, any shape. All other openings deny 17 HCP.
+$.1C. := Points >= 17 ;
+
+## Three notrump: gambling, solid seven-card minor, no outside A/K
+## (approximated as in bws_input.txt via suit points, since seat/
+## position-dependent nuance has no representation here).
+$soundClubSuit := (Clubs >= 7) AND (Cpts >= 6) ;
+$soundDiamondSuit := (Diamonds >= 7) AND (Dpts >= 6) ;
+$.3N. := ($soundClubSuit OR $soundDiamondSuit) AND (Points <= 10) AND NOT $.1C. ;
+
+## Two hearts: 11-16, 4-4-1-4 or 4-4-0-5 (exact spades-hearts-
+## diamonds-clubs order per the glossary's hyphenated notation); or
+## 14-16, 4-3-1-5/3-4-1-5 with QTx-or-better in the three-card suit.
+$.2H. := NOT ($.1C. OR $.3N.) AND
+         (((11 TO 16 Points) AND (shape [4-4-1-4] OR shape [4-4-0-5])) OR
+          ((14 TO 16 Points) AND (shape [4-3-1-5]) AND Hq AND Ht) OR
+          ((14 TO 16 Points) AND (shape [3-4-1-5]) AND Sq AND St)) ;
+
+## Two clubs: 11-16, five clubs and a 4-card major, or 6+ clubs, or
+## 15-16 with 5+ clubs and 4 diamonds.
+$.2C. := NOT ($.1C. OR $.3N. OR $.2H.) AND
+         (((11 TO 16 Points) AND (Clubs ?= 5) AND ((Spades >= 4) OR (Hearts >= 4))) OR
+          ((11 TO 16 Points) AND (Clubs >= 6)) OR
+          ((15 TO 16 Points) AND (Clubs >= 5) AND (Diamonds ?= 4))) ;
+
+## One notrump: 12-14 balanced/semi-balanced; if exactly 14, no
+## 5-card suit (so 5-3-3-2/5-4-2-2/6-3-2-2 are excluded at 14). The
+## text allows as few as 11 HCP non-vulnerable; not separately
+## representable here (no vulnerability keyword), so the floor is set
+## at 11 uniformly.
+$.1N. := NOT ($.1C. OR $.3N. OR $.2H. OR $.2C.) AND
+         (((11 TO 13 Points) AND $ntShape) OR
+          ((Points ?= 14) AND (shape [4,3,3,3] OR shape [4,4,3,2]))) ;
+
+## Two diamonds: weak two in either major (opener knows which; not
+## separately distinguishable as two different hand-typed rules since
+## the call itself is the same "$.2D." node either way).
+$weakTwoStrength := 5 TO 10 Points ;
+$.2D. := $weakTwoStrength AND
+         (((Hearts ?= 6) AND (Spades <= 3) AND (Diamonds <= 4) AND (Clubs <= 4)) OR
+          ((Spades ?= 6) AND (Hearts <= 3) AND (Diamonds <= 4) AND (Clubs <= 4))) AND
+         NOT ($.1C. OR $.3N. OR $.2H. OR $.2C. OR $.1N.) ;
+
+## Two spades: weak, 5-5+ in the reds or in the blacks.
+$.2S. := $weakTwoStrength AND
+         ((Hearts >= 5 AND Diamonds >= 5) OR (Spades >= 5 AND Clubs >= 5)) AND
+         NOT ($.1C. OR $.3N. OR $.2H. OR $.2C. OR $.1N. OR $.2D.) ;
+
+## Two notrump: weak, 5-5+ in the majors or in the minors.
+$.2N. := $weakTwoStrength AND
+         ((Hearts >= 5 AND Spades >= 5) OR (Clubs >= 5 AND Diamonds >= 5)) AND
+         NOT ($.1C. OR $.3N. OR $.2H. OR $.2C. OR $.1N. OR $.2D. OR $.2S.) ;
+
+## Three-level preempts (natural), using the Maj/Min macros for the
+## symmetric case.
+$.3Maj. := (5 TO 10 Points) AND (Maj >= 7) AND
+           NOT ($.1C. OR $.3N. OR $.2H. OR $.2C. OR $.1N. OR $.2D. OR $.2S. OR $.2N.) ;
+$.3Min. := (5 TO 10 Points) AND (Min >= 7) AND
+           NOT ($.1C. OR $.3N. OR $.2H. OR $.2C. OR $.1N. OR $.2D. OR $.2S. OR $.2N.) ;
+
+## One-level suit openings. Standard priority for a two-suited major
+## hand: bid the longer; with equal length, spades.
+$majorPrioritySpade := (Spades >= 5) AND (Spades >= Hearts) ;
+$majorPriorityHeart := (Hearts >= 5) AND (Hearts > Spades) ;
+$openingRange := 11 TO 16 Points ;
+
+$.1S. := $openingRange AND $majorPrioritySpade AND NOT ($.1C. OR $.3N. OR $.2H. OR $.2C. OR $.1N.) ;
+$.1H. := $openingRange AND $majorPriorityHeart AND
+         NOT ($.1C. OR $.3N. OR $.2H. OR $.2C. OR $.1N. OR $.1S.) ;
+
+## One diamond: 11-16 with 4+ diamonds, or balanced 14-16 with no
+## qualifying major (the residual balanced-15-16 hand that is too
+## strong for 1NT and does not match two clubs' specific shape).
+$.1D. := $openingRange AND (Spades < 5) AND (Hearts < 5) AND
+         ((Diamonds >= 4) OR $balanced) AND
+         NOT ($.1C. OR $.3N. OR $.2H. OR $.2C. OR $.1N.) ;
+
+## Four of a minor: NAMYATS. 4C transfers to an independent 7+ heart
+## suit, 4D to an independent 7+ spade suit, 8-9 playing tricks
+## (approximated here by suit points, since "playing tricks" is not a
+## native measure).
+$.4C. := (Hearts >= 7) AND (Hpts >= 7) AND NOT $.1C. ;
+$.4D. := (Spades >= 7) AND (Spts >= 7) AND NOT $.1C. ;
+
+## Four of a major: to play, weaker than the NAMYATS 4m.
+$.4H. := (Hearts >= 7) AND (Points <= 9) AND (Hpts < 7) AND NOT $.1C. ;
+$.4S. := (Spades >= 7) AND (Points <= 9) AND (Spts < 7) AND NOT $.1C. ;
+
+## Pass.
+$.P. := NOT ($.1C. OR $.1D. OR $.1H. OR $.1S. OR $.1N. OR
+             $.2C. OR $.2D. OR $.2H. OR $.2S. OR $.2N. OR
+             $.3C. OR $.3D. OR $.3H. OR $.3S. OR $.3N. OR
+             $.4C. OR $.4D. OR $.4H. OR $.4S.) ;
+
+
+## ============================================================
+## Ch 2 / 2.1 / 2.2: THE ONE-NOTRUMP OPENING
+## ============================================================
+
+## Two spades: 5-4-or-better in the minors, either preemptive or a
+## strong/slammish hand.
+$bothMinors54 := (Clubs >= 5 AND Diamonds >= 4) OR (Diamonds >= 5 AND Clubs >= 4) ;
+$.1N.2S. := $noMajor4 AND $bothMinors54 AND ((Points <= 7) OR $slamish) ;
+
+## Two clubs: Puppet Stayman -- one or two 4-card majors (inv+), an
+## invitational-or-better long minor, or a balanced invitational hand
+## with or without a major.
+$.1N.2C. := (Points >= 10) AND NOT $bothMinors54 AND
+            ((Spades ?= 4) OR (Hearts ?= 4) OR
+             ($noMajor4 AND $balanced) OR
+             ($noMajor4 AND (Clubs >= 5 OR Diamonds >= 5))) ;
+
+## Jacoby transfers (denies 4+ of the other major unless very weak).
+$.1N.2D. := (Hearts >= 5) AND ((Spades < 4) OR (Points <= 6)) ;
+$.1N.2H. := (Spades >= 5) AND ((Hearts < 4) OR (Points <= 6)) ;
+
+## Unconditional transfers to clubs/diamonds: signoff or game force
+## (invitational hands with a long minor go via Puppet Stayman above).
+$.1N.2N. := (Clubs >= 5) AND ((Points <= 9) OR (Points >= 13)) ;
+$.1N.3C. := (Diamonds >= 5) AND ((Points <= 9) OR (Points >= 13)) ;
+
+## Three diamonds: minor-suit Stayman, strong 2-3-4-4 shape (either
+## major split).
+$.1N.3D. := (Clubs ?= 4) AND (Diamonds ?= 4) AND
+            (((Spades ?= 2) AND (Hearts ?= 3)) OR ((Spades ?= 3) AND (Hearts ?= 2))) AND
+            (Points >= 10) ;
+$.1N.3D.3H. := Clubs ?= 4 ;
+$.1N.3D.3S. := Diamonds ?= 4 ;
+$.1N.3D.3N. := $noMajor4 ;
+
+## Three of a major: 3-suited hand, short in the bid major, 4 cards in
+## the other, minors split 5-3/4-4/5-4.
+$minorSplit3M := (Clubs ?= 5 AND Diamonds ?= 3) OR (Clubs ?= 3 AND Diamonds ?= 5) OR
+                 (Clubs ?= 4 AND Diamonds ?= 4) OR (Clubs ?= 5 AND Diamonds ?= 4) OR
+                 (Clubs ?= 4 AND Diamonds ?= 5) ;
+$.1N.3H. := (Hearts <= 1) AND (Spades ?= 4) AND $minorSplit3M AND (Points >= 10) ;
+$.1N.3S. := (Spades <= 1) AND (Hearts ?= 4) AND $minorSplit3M AND (Points >= 10) ;
+
+## Three/four notrump: natural.
+$.1N.3N. := $balanced AND $noMajor4 AND (11 TO 15 Points) ;
+$.1N.4N. := $balanced AND $noMajor4 AND (16 TO 17 Points) ;
+
+## Gerber.
+$.1N.4C. := $slamish AND $noMajor4 ;
+$.1N.4C.4D. := $aces0 ;
+$.1N.4C.4H. := $aces1 ;
+$.1N.4C.4S. := $aces2 ;
+$.1N.4C.4N. := $aces3 ;
+
+## Texas transfers; 4S over 4H, or 4N over 4S, is Kickback (the bid
+## above the trump suit asks for key cards). Step order in this system
+## is 1/4, 0/3, 2-without-trump-Q, 2-with-trump-Q (Ch 4.2/4.3) --
+## different from bws_input.txt's BWS-style 0/3, 1/4, 2, 2+Q ordering.
+$.1N.4D. := (Hearts >= 6) AND (8 TO 11 Points) ;
+$.1N.4H. := (Spades >= 6) AND (8 TO 11 Points) ;
+$.1N.4D.4H. := Points >= 0 ;
+$.1N.4H.4S. := Points >= 0 ;
+$.1N.4D.4H.4S. := $slamish ;
+$.1N.4D.4H.4S.4N. := (Hkcs ?= 1) OR (Hkcs ?= 4) ;
+$.1N.4D.4H.4S.5C. := (Hkcs ?= 0) OR (Hkcs ?= 3) ;
+$.1N.4D.4H.4S.5D. := (Hkcs ?= 2) AND NOT Hq ;
+$.1N.4D.4H.4S.5H. := (Hkcs ?= 2) AND Hq ;
+$.1N.4H.4S.4N. := $slamish ;
+$.1N.4H.4S.4N.5C. := (Skcs ?= 1) OR (Skcs ?= 4) ;
+$.1N.4H.4S.4N.5D. := (Skcs ?= 0) OR (Skcs ?= 3) ;
+$.1N.4H.4S.4N.5H. := (Skcs ?= 2) AND NOT Sq ;
+$.1N.4H.4S.4N.5S. := (Skcs ?= 2) AND Sq ;
+
+## ---- Ch 2.1: Bidding After Puppet Stayman ----
+
+## Opener bids a 5-card major if he has one, else two diamonds.
+$.1N.2C.2H. := Hearts >= 5 ;
+$.1N.2C.2S. := (Spades >= 5) AND (Hearts < 5) ;
+$.1N.2C.2D. := (Hearts < 5) AND (Spades < 5) ;
+
+## Over 1N-2C-2H, two spades agrees hearts and starts a Telescope Ask;
+## over 1N-2C-2S, three hearts is a general slam try inviting cue
+## bids. 1N-2C-2M-4N is quantitative; 1N-2C-2H-4S is Kickback.
+$.1N.2C.2H.2S. := (Hearts >= 3) AND $slamish ;
+$.1N.2C.2S.3H. := (Spades >= 3) AND $slamish ;
+$.1N.2C.2H.4N. := (16 TO 17 Points) AND $balanced ;
+$.1N.2C.2S.4N. := (16 TO 17 Points) AND $balanced ;
+$.1N.2C.2H.4S. := $slamish ;
+$.1N.2C.2H.4S.4N. := (Hkcs ?= 1) OR (Hkcs ?= 4) ;
+$.1N.2C.2H.4S.5C. := (Hkcs ?= 0) OR (Hkcs ?= 3) ;
+$.1N.2C.2H.4S.5D. := (Hkcs ?= 2) AND NOT Hq ;
+$.1N.2C.2H.4S.5H. := (Hkcs ?= 2) AND Hq ;
+
+## Responder's rebids over 1N-2C-2D.
+$.1N.2C.2D.2H. := (Hearts ?= 4) AND (Points >= 10) ;
+$.1N.2C.2D.2S. := (Spades ?= 4) AND (Hearts < 4) AND (Points >= 10) ;
+$.1N.2C.2D.2N. := $noMajor4 AND $inv ;
+$.1N.2C.2D.3C. := (Clubs >= 5) AND $noMajor4 AND $inv ;
+$.1N.2C.2D.3D. := (Diamonds >= 5) AND $noMajor4 AND $inv ;
+$.1N.2C.2D.3H. := (Hearts >= 5) AND (Spades >= 5) AND $inv ;
+$.1N.2C.2D.3S. := (Hearts ?= 5) AND (Spades ?= 5) AND $gf AND ((Clubs <= 1) OR (Diamonds <= 1)) ;
+$.1N.2C.2D.3N. := $balanced AND $noMajor4 AND (13 TO 15 Points) ;
+$.1N.2C.2D.4C. := (Hearts ?= 5) AND (Spades ?= 5) AND (Clubs ?= 0) AND $slamish ;
+$.1N.2C.2D.4D. := (Hearts ?= 5) AND (Spades ?= 5) AND (Diamonds ?= 0) AND $slamish ;
+
+## Opener's continuations over the 5-5-forcing three spades.
+$.1N.2C.2D.3S.4C. := (Hearts >= 3) AND (Points >= 14) ;
+$.1N.2C.2D.3S.4D. := (Spades >= 3) AND (Points >= 14) ;
+$.1N.2C.2D.3S.3N. := (Hearts >= 3) AND (Spades >= 3) AND (14 TO 16 Points) ;
+$.1N.2C.2D.3S.4H. := (Hearts >= 3) AND (Points <= 13) ;
+
+## Opener's rebids after 1N-2C-2D-2H (the one-round-force major ask).
+$.1N.2C.2D.2H.2S. := (Spades ?= 4) AND (Hearts < 4) ;
+$.1N.2C.2D.2H.2N. := (Hearts < 4) AND (Spades < 4) AND (Points <= 13) ;
+$.1N.2C.2D.2H.3C. := (Hearts < 4) AND (Spades < 4) AND (Points >= 14) ;
+$.1N.2C.2D.2H.3D. := (Hearts ?= 4) AND (Points <= 13) ;
+$.1N.2C.2D.2H.3H. := (Hearts >= 4) AND (Points <= 12) ;
+$.1N.2C.2D.2H.3N. := (Hearts >= 4) AND (Points >= 14) AND NOT (Sa OR Da OR Ca) ;
+$.1N.2C.2D.2H.4C. := (Hearts >= 4) AND (Points >= 14) AND Ca ;
+$.1N.2C.2D.2H.4D. := (Hearts >= 4) AND (Points >= 14) AND Da ;
+
+## Opener's rebids after 1N-2C-2D-2S.
+$.1N.2C.2D.2S.2N. := (Spades < 4) AND (Points <= 13) ;
+$.1N.2C.2D.2S.3C. := (Spades < 4) AND (Points >= 14) ;
+$.1N.2C.2D.2S.3D. := (Spades ?= 4) AND (Points <= 13) ;
+$.1N.2C.2D.2S.3S. := (Spades >= 4) AND (Points <= 12) ;
+$.1N.2C.2D.2S.3N. := (Spades >= 4) AND (Points >= 14) AND NOT (Ha OR Da OR Ca) ;
+$.1N.2C.2D.2S.3H. := (Spades >= 4) AND (Points >= 14) AND Ha ;
+$.1N.2C.2D.2S.4C. := (Spades >= 4) AND (Points >= 14) AND Ca ;
+$.1N.2C.2D.2S.4D. := (Spades >= 4) AND (Points >= 14) AND Da ;
+
+## Representative continuation once opener has denied a fit (2N/3C):
+## three of a minor is invitational with a 5+ suit; three of a major
+## shows 5-4 in the majors, 4 in the first-bid suit.
+$.1N.2C.2D.2H.2N.3C. := (Clubs >= 5) AND $inv ;
+$.1N.2C.2D.2H.2N.3D. := (Diamonds >= 5) AND $inv ;
+$.1N.2C.2D.2H.2N.3H. := (Hearts >= 4) AND (Spades >= 5) AND $inv ;
+$.1N.2C.2D.2H.2N.3S. := (Hearts >= 4) AND (Spades >= 5) AND $gf ;
+
+## After 1N-2C-2D-2H-2S, three hearts is minor-suit Stayman.
+$.1N.2C.2D.2H.2S.3H. := (Hearts < 4) AND (Spades < 4) AND $slamish ;
+$.1N.2C.2D.2H.2S.3H.3S. := Diamonds ?= 4 ;
+$.1N.2C.2D.2H.2S.3H.3N. := shape [4,3,3,3] ;
+$.1N.2C.2D.2H.2S.3H.4C. := (Clubs ?= 4) AND $ctl0 ;
+$.1N.2C.2D.2H.2S.3H.4D. := (Clubs ?= 4) AND $ctl1 ;
+$.1N.2C.2D.2H.2S.3H.4H. := (Clubs ?= 4) AND $ctl2 ;
+
+## ---- Ch 2.2: Bidding after Jacoby Transfers ----
+
+## Superaccepts: bid a doubleton (spade doubleton over the heart
+## transfer), or a long-suit try with an unspecified long suit (next
+## step asks), or honors in the doubleton.
+$.1N.2D.2S. := (Hearts >= 4) AND (Points >= 14) AND (Spades != 2) ;
+$.1N.2D.2N. := (Hearts >= 4) AND (Spades ?= 2) AND (Points >= 14) AND NOT (Sq OR Sk OR Sa) ;
+$.1N.2D.3H. := (Hearts >= 4) AND (Spades ?= 2) AND (Points >= 14) AND (Sq OR Sk OR Sa) ;
+$.1N.2D.2H. := NOT ((Hearts >= 4) AND (Points >= 14)) ;
+
+$.1N.2H.2N. := (Spades >= 4) AND (Points >= 14) AND NOT ((Hearts ?= 2) AND (Hq OR Hk OR Ha)) ;
+$.1N.2H.3S. := (Spades >= 4) AND (Hearts ?= 2) AND (Points >= 14) AND (Hq OR Hk OR Ha) ;
+$.1N.2H.2S. := NOT ((Spades >= 4) AND (Points >= 14)) ;
+
+## Responder's rebids after the plain heart accept: new major = trump
+## ask/slam try; new minor = natural GF; rebid of suit = natural
+## invitational; notrump = natural (no Blackwood); jump to game =
+## invitational RKC (immediate key-card ask).
+$.1N.2D.2H.2S. := (Hearts >= 5) AND (Spades >= 4) AND $slamish ;
+$.1N.2D.2H.3C. := (Hearts >= 5) AND (Clubs >= 5) AND $gf ;
+$.1N.2D.2H.3D. := (Hearts >= 5) AND (Diamonds >= 5) AND $gf ;
+$.1N.2D.2H.3H. := (Hearts ?= 5) AND $inv ;
+$.1N.2D.2H.3N. := (Hearts ?= 5) AND $balanced AND (10 TO 13 Points) ;
+$.1N.2D.2H.4H. := (Hearts >= 6) AND $inv ;
+$.1N.2D.2H.4H.5C. := (Hkcs ?= 1) OR (Hkcs ?= 4) ;
+$.1N.2D.2H.4H.5D. := (Hkcs ?= 0) OR (Hkcs ?= 3) ;
+$.1N.2D.2H.4H.5H. := (Hkcs ?= 2) AND NOT Hq ;
+$.1N.2D.2H.4H.5S. := (Hkcs ?= 2) AND Hq ;
+
+## Bidding after 1N-2H-2S-3H: general slam try in spades, denies a
+## singleton; opener's rebids concern trump quality.
+$top2Spades := (Sa AND Sk) OR (Sa AND Sq) OR (Sk AND Sq) ;
+$top3Spades := Sa AND Sk AND Sq ;
+$.1N.2H.2S.3H. := (Spades >= 4) AND $slamish AND (Hearts >= 2) AND (Diamonds >= 2) AND (Clubs >= 2) ;
+$.1N.2H.2S.3H.3S. := (Spades ?= 3) AND NOT ($top2Spades OR $top3Spades) ;
+$.1N.2H.2S.3H.3N. := ((Spades ?= 3) AND ($top2Spades OR $top3Spades)) OR
+                     ((Spades ?= 4) AND NOT $top2Spades) ;
+$.1N.2H.2S.3H.4C. := (Spades >= 4) AND $top2Spades AND (Clubs <= 1) ;
+$.1N.2H.2S.3H.4D. := (Spades >= 4) AND $top2Spades AND (Diamonds <= 1) ;
+
+## Bidding after 1N-2D-2H-2S: asks trump length; responses show 2, 3
+## and 4 trumps. Step 1 (here) is STA, step 2 is controls/Epsilon.
+$.1N.2D.2H.2S.2N. := Hearts ?= 2 ;
+$.1N.2D.2H.2S.3C. := Hearts ?= 3 ;
+$.1N.2D.2H.2S.3D. := Hearts >= 4 ;
+
+
+## ============================================================
+## Ch 5 / 5.1-5.8, Ch 6: THE ONE-CLUB OPENING
+## ============================================================
+## NOTATION REMINDER (per the source glossary): a hyphenated pattern
+## like "4-4-1-4" is an EXACT spades-hearts-diamonds-clubs shape (the
+## dash-delimited shape literal here); a dotted pattern like "4.4.4.1"
+## is unordered (the comma-delimited literal). Both appear throughout
+## this chapter and are followed precisely below.
+
+## ---- Ch 5: top-level responses to one club ----
+$.1C.1D. := (Points <= 7) OR ((Points >= 12) AND shape [4,4,4,1]) ;
+$.1C.1H. := $gf AND (Hearts >= 4) ;
+$.1C.1S. := $gf AND (Spades >= 4) AND (Hearts < 4) ;
+$.1C.2D. := $gf AND (Diamonds >= 5) AND (Hearts < 4) AND (Spades < 4) ;
+$.1C.1N. := (10 TO 13 Points) AND $balanced AND $noMajor5 ;
+$.1C.2H. := (8 TO 11 Points) AND (shape [4,4,4,1] OR shape [0-4-5-4] OR shape [4-0-5-4]) ;
+$.1C.2S. := (8 TO 9 Points) AND $balanced AND $noMajor5 ;
+$.1C.2N. := (Points >= 14) AND $balanced AND $noMajor5 ;
+$.1C.3C. := (8 TO 11 Points) AND (Diamonds ?= 5) AND (Clubs ?= 4) ;
+$.1C.3D. := (Points >= 8) AND (Diamonds >= 6) AND (Clubs ?= 4) ;
+$.1C.3H. := (Points >= 12) AND shape [3-1-5-4] ;
+$.1C.3S. := (Points >= 12) AND shape [1-3-5-4] ;
+$.1C.3N. := (12 TO 13 Points) AND shape [2-2-5-4] ;
+$.1C.4C. := (Points >= 14) AND shape [2-2-5-4] AND (Controls <= 3) ;
+$.1C.4D. := (Points >= 14) AND shape [2-2-5-4] AND (Controls ?= 4) ;
+$.1C.4H. := (Points >= 14) AND shape [2-2-5-4] AND (Controls ?= 5) ;
+$.1C.4S. := (Points >= 14) AND shape [2-2-5-4] AND (Controls >= 6) ;
+
+## ---- Ch 5.1: Bidding after 1C-1M (opener's rebids) ----
+## Raise/2N are artificial big-hand markers here (20+/17-19 balanced-
+## ish, denying an actual fit or a second 5-card suit), not natural
+## raises -- a distinctive feature of this system.
+$.1C.1H.2H. := (Points >= 20) AND (Hearts < 3) AND (shape [4,4,3,2] OR shape [4,4,4,1]) ;
+$.1C.1S.2S. := (Points >= 20) AND (Spades < 3) AND (shape [4,4,3,2] OR shape [4,4,4,1]) ;
+$.1C.1H.2N. := (17 TO 19 Points) AND (Hearts < 3) AND (shape [4,4,3,2] OR shape [4,4,4,1]) ;
+$.1C.1S.2N. := (17 TO 19 Points) AND (Spades < 3) AND (shape [4,4,3,2] OR shape [4,4,4,1]) ;
+$.1C.1H.1N. := Hearts >= 3 ;
+$.1C.1S.1N. := Spades >= 3 ;
+$.1C.1H.1S. := Spades >= 5 ;
+$.1C.1H.2C. := (Clubs >= 5) AND (Hearts < 3) ;
+$.1C.1H.2D. := (Diamonds >= 5) AND (Hearts < 3) ;
+$.1C.1S.2C. := (Clubs >= 5) AND (Spades < 3) ;
+$.1C.1S.2D. := (Diamonds >= 5) AND (Spades < 3) ;
+$.1C.1S.2H. := (Hearts >= 5) AND (Spades < 3) ;
+$.1C.1H.3C. := (Clubs >= 6) AND (Cpts >= 6) ;
+$.1C.1H.3D. := (Diamonds >= 6) AND (Dpts >= 6) ;
+$.1C.1S.3C. := (Clubs >= 6) AND (Cpts >= 6) ;
+$.1C.1S.3D. := (Diamonds >= 6) AND (Dpts >= 6) ;
+$.1C.1S.3H. := (Hearts >= 6) AND (Hpts >= 6) ;
+$.1C.1H.3H. := (Hearts >= 3) AND (17 TO 19 Points) ;
+$.1C.1S.3S. := (Spades >= 3) AND (17 TO 19 Points) ;
+
+## Representative continuations (the full CTL/Q, STA/Epsilon relay
+## trees after 1C-1M-2M/2N/1N are not separately enumerated -- see
+## the file header).
+$.1C.1H.2H.3N. := shape [5,3,3,2] AND (8 TO 9 Points) ;
+$.1C.1H.2H.3H. := shape [5,3,3,2] AND (Points >= 10) ;
+$.1C.1S.2S.3N. := shape [5,3,3,2] AND (8 TO 9 Points) ;
+$.1C.1S.2S.3S. := shape [5,3,3,2] AND (Points >= 10) ;
+
+## ---- Ch 5.2: Bidding After 1C-1N ----
+$.1C.1N.2C. := (Clubs >= 5) AND $noMajor5 ;
+$.1C.1N.2D. := (Diamonds >= 5) AND (Clubs < 5) AND $noMajor5 ;
+$.1C.1N.2H. := Hearts >= 5 ;
+$.1C.1N.2S. := (Spades >= 5) AND (Hearts < 5) ;
+$.1C.1N.2N. := (((Points >= 19) OR (Spades ?= 4) OR (Hearts ?= 4))) AND $balanced ;
+$.1C.1N.2N.3C. := Hearts ?= 4 ;
+$.1C.1N.2N.3D. := (Spades ?= 4) AND (Hearts < 4) ;
+$.1C.1N.2N.3H. := (Clubs >= 4) AND (Spades < 4) AND (Hearts < 4) ;
+$.1C.1N.2N.3N. := shape [3-3-4-3] ;
+$.1C.1N.3D. := (Diamonds >= 6) AND (Dpts >= 6) ;
+$.1C.1N.3H. := (Hearts >= 6) AND (Hpts >= 6) ;
+$.1C.1N.3S. := (Spades >= 6) AND (Spts >= 6) ;
+$.1C.1N.3N. := $balanced AND (14 TO 16 Points) ;
+$.1C.1N.4C. := $slamish AND $balanced ;
+$.1C.1N.4C.4D. := $aces0 ;
+$.1C.1N.4C.4H. := $aces1 ;
+$.1C.1N.4C.4S. := $aces2 ;
+$.1C.1N.4C.4N. := $aces3 ;
+$.1C.1N.4D. := $slamish ;
+$.1C.1N.4D.4H. := (Ckcs ?= 1) OR (Ckcs ?= 4) ;
+$.1C.1N.4D.4S. := (Ckcs ?= 0) OR (Ckcs ?= 3) ;
+$.1C.1N.4D.4N. := (Ckcs ?= 2) AND NOT Cq ;
+$.1C.1N.4D.5C. := (Ckcs ?= 2) AND Cq ;
+
+## Representative responder continuation (2N=no 3-card support, 3N/
+## single raise/jump raise = 3-4-card fit at various strengths, new
+## suit natural, jump shift = 4-card-fit cue with an ace) after the
+## two-diamond rebid; the identical pattern applies after 2H/2S/2N.
+$.1C.1N.2D.2N. := Diamonds < 3 ;
+$.1C.1N.2D.3N. := (Diamonds ?= 3) AND (Points <= 11) ;
+$.1C.1N.2D.3D. := (Diamonds ?= 4) AND (Points <= 11) ;
+$.1C.1N.2D.4D. := (Diamonds >= 3) AND ((Da AND Dk) OR (Da AND Dq) OR (Dk AND Dq)) AND
+                  NOT (Sa OR Ha OR Ca) ;
+$.1C.1N.2D.3H. := (Hearts >= 5) AND (Diamonds < 3) ;
+$.1C.1N.2D.4C. := (Diamonds ?= 4) AND (Clubs >= 5) AND (Points >= 12) AND (Ca OR Cq) ;
+
+## ---- Ch 5.3: Bidding After 1C-2C ----
+$.1C.2C.2H. := Hearts >= 5 ;
+$.1C.2C.2S. := (Spades >= 5) AND (Hearts < 5) ;
+$.1C.2C.2N. := Diamonds >= 5 ;
+$.1C.2C.3C. := $slamish AND (Clubs >= 4) ;
+$.1C.2C.3D. := Clubs >= 4 ;
+$.1C.2C.3H. := Clubs >= 4 ;
+$.1C.2C.3S. := Clubs >= 4 ;
+$.1C.2C.3N. := (17 TO 18 Points) AND (shape [3-3-4-3] OR shape [3-3-3-4]) ;
+$.1C.2C.2D. := (Clubs ?= 4) OR (Diamonds ?= 4) OR (Clubs >= 6) OR
+               (shape [3-2-2-6]) OR
+               ((Clubs >= 6) AND (Cpts >= 9)) ;
+
+## ---- Ch 5.4: Bidding After 1C-2D (played totally natural) ----
+$.1C.2D.2H. := Hearts >= 5 ;
+$.1C.2D.2S. := (Spades >= 5) AND (Hearts < 5) ;
+$.1C.2D.2N. := $balanced ;
+$.1C.2D.3D. := (Diamonds >= 4) AND $slamish ;
+
+## ---- Ch 5.5: Bidding after 1C-2H (3-suiter, 8-11, any 4.4.4.1 or a
+## 5.4.4.0 void in a major with 5-4 in the minors) ----
+$.1C.2H.2S. := $slamish ;
+$.1C.2H.2N. := (Spades ?= 0) AND shape [0,5,4,4] ;
+$.1C.2H.3C. := Clubs >= 6 ;
+$.1C.2H.3D. := Diamonds >= 6 ;
+$.1C.2H.3H. := (Hearts ?= 0) AND shape [4,0,4,5] ;
+
+## ---- Ch 5.6: Bidding after 1C-2S (balanced 8-9, no 5-card major,
+## no 6-card minor) ----
+$.1C.2S.2N. := $slamish ;
+$.1C.2S.2N.3C. := Hearts ?= 4 ;
+$.1C.2S.2N.3D. := (Spades ?= 4) AND (Hearts < 4) ;
+$.1C.2S.2N.3H. := (Clubs >= 4) AND $noMajor4 ;
+$.1C.2S.2N.3S. := Diamonds ?= 5 ;
+$.1C.2S.2N.3N. := shape [3-3-4-3] ;
+
+## ---- Ch 5.7: Bidding After 1C-2N (balanced 14+, no 5-card major,
+## forcing to at least 4H) ----
+$.1C.2N.3D. := Diamonds >= 5 ;
+$.1C.2N.3H. := Hearts >= 5 ;
+$.1C.2N.3S. := Spades >= 5 ;
+$.1C.2N.3N. := $noMajor5 AND (Clubs >= 5) ;
+$.1C.2N.3C. := $noMajor5 AND (Points >= 14) ;
+$.1C.2N.3C.3D. := $noMajor4 ;
+$.1C.2N.3C.3H. := (Hearts ?= 4) AND (Spades < 4) ;
+$.1C.2N.3C.3S. := (Spades >= 4) ;
+$.1C.2N.3C.3N. := (Spades ?= 4) AND (Hearts ?= 4) ;
+
+## ---- Ch 5.8: Impossible-Negative Auctions ----
+## 1C-1D may itself be a strong (12+) three-suiter (5-4-4-0/4-4-4-1
+## with the fifth or extra card a minor); responder shows this by an
+## unusual-strength follow-up bid rather than at the 1D response
+## itself.
+$.1C.1D.2C.3N. := (Clubs <= 1) AND (Points >= 12) ;
+$.1C.1D.2D.3N. := (Diamonds <= 1) AND (Points >= 12) ;
+$.1C.1D.1H.2N. := ((Hearts <= 1) AND (Points >= 14)) OR
+                  (((Spades <= 1) OR (Diamonds <= 1) OR (Clubs <= 1)) AND (Points >= 12) AND (Hearts >= 4)) ;
+$.1C.1D.1H.3N. := (Hearts <= 1) AND (12 TO 13 Points) ;
+$.1C.1D.1S.2N. := ((Spades <= 1) AND (Points >= 14)) OR
+                  (((Hearts <= 1) OR (Diamonds <= 1) OR (Clubs <= 1)) AND (Points >= 12) AND (Spades >= 4)) ;
+$.1C.1D.1S.3N. := (Spades <= 1) AND (12 TO 13 Points) ;
+
+
+## ============================================================
+## Ch 6 / 6.1-6.4: BIDDING AFTER 1C-1D
+## ============================================================
+
+## ---- Opener's rebids ----
+$.1C.1D.1H. := (Hearts >= 5) OR (shape [4,4,4,1]) OR ((Points ?= 20) AND $balanced) ;
+$.1C.1D.1S. := (Spades >= 5) AND (Hearts < 5) ;
+$.1C.1D.1N. := (17 TO 20 Points) AND $balanced AND
+               NOT ((Points ?= 20) AND (Spades >= 4 OR Hearts >= 4 OR Clubs >= 5 OR Diamonds >= 5)) ;
+$.1C.1D.2C. := (17 TO 22 Points) AND (Clubs >= 5) AND $noMajor4 ;
+$.1C.1D.2D. := (17 TO 22 Points) AND (Diamonds >= 5) AND $noMajor4 ;
+$.1C.1D.2H. := (Points >= 24) AND (Hearts ?= 4) AND $balanced ;
+$.1C.1D.2S. := ((Points >= 24) AND (Spades ?= 4) AND $balanced) OR
+               ((Points >= 22) AND (Spades ?= 4) AND (Diamonds >= 5 OR Clubs >= 5)) ;
+$.1C.1D.3C. := (Points >= 22) AND (Clubs >= 5) AND $noMajor4 ;
+$.1C.1D.3D. := (Points >= 22) AND (Diamonds >= 5) AND $noMajor4 ;
+$.1C.1D.2N. := (21 TO 23 Points) AND $balanced ;
+$.1C.1D.3N. := (24 TO 27 Points) AND $balanced AND $noMajor4 ;
+
+## ---- Bidding after 1C-1D-1M ----
+$.1C.1D.1H.1S. := (Spades >= 4) AND (Points <= 7) ;
+$.1C.1D.1S.2H. := (Hearts >= 5) AND (Points <= 7) ;
+$.1C.1D.1H.2C. := (5 TO 7 Points) AND (Clubs >= 5) AND (Hearts < 3) ;
+$.1C.1D.1H.2D. := (5 TO 7 Points) AND (Diamonds >= 5) AND (Hearts < 3) ;
+$.1C.1D.1S.2C. := (5 TO 7 Points) AND (Clubs >= 5) AND (Spades < 3) ;
+$.1C.1D.1S.2D. := (5 TO 7 Points) AND (Diamonds >= 5) AND (Spades < 3) ;
+$.1C.1D.1H.2H. := (2 TO 4 Points) AND (Hearts >= 3) ;
+$.1C.1D.1S.2S. := (2 TO 4 Points) AND (Spades >= 3) ;
+$.1C.1D.1H.3H. := (5 TO 6 Points) AND (Hearts >= 4) ;
+$.1C.1D.1S.3S. := (5 TO 6 Points) AND (Spades >= 4) ;
+$.1C.1D.1H.3C. := (5 TO 7 Points) AND (Clubs >= 4) AND (Hearts >= 3) ;
+$.1C.1D.1H.3D. := (5 TO 7 Points) AND (Diamonds >= 4) AND (Hearts >= 3) ;
+$.1C.1D.1S.3C. := (5 TO 7 Points) AND (Clubs >= 4) AND (Spades >= 3) ;
+$.1C.1D.1S.3D. := (5 TO 7 Points) AND (Diamonds >= 4) AND (Spades >= 3) ;
+$.1C.1D.1H.4H. := (6 TO 7 Points) AND (Hearts >= 4) ;
+$.1C.1D.1S.4S. := (6 TO 7 Points) AND (Spades >= 4) ;
+$.1C.1D.1H.4C. := (6 TO 7 Points) AND (Hearts >= 4) AND (Clubs <= 1) ;
+$.1C.1D.1H.4D. := (6 TO 7 Points) AND (Hearts >= 4) AND (Diamonds <= 1) ;
+$.1C.1D.1S.4C. := (6 TO 7 Points) AND (Spades >= 4) AND (Clubs <= 1) ;
+$.1C.1D.1S.4D. := (6 TO 7 Points) AND (Spades >= 4) AND (Diamonds <= 1) ;
+$.1C.1D.1S.4H. := (6 TO 7 Points) AND (Spades >= 4) AND (Hearts <= 1) ;
+
+## ---- Ch 6.1: Bidding after 1C-1D-2m (representative top level) ----
+$.1C.1D.2C.2D. := Points >= 0 ;
+$.1C.1D.2C.2H. := (Hearts >= 4) AND (4 TO 6 Points) ;
+$.1C.1D.2C.2S. := (Spades >= 4) AND (4 TO 6 Points) ;
+$.1C.1D.2C.2N. := (4 TO 6 Points) ;
+$.1C.1D.2C.3D. := (Diamonds >= 6) AND (6 TO 7 Points) ;
+$.1C.1D.2C.3H. := (Hearts >= 6) AND (6 TO 7 Points) ;
+$.1C.1D.2C.3S. := (Spades >= 6) AND (6 TO 7 Points) ;
+$.1C.1D.2D.2H. := (4 TO 7 Points) AND ((Spades ?= 4) OR (Hearts >= 4)) ;
+$.1C.1D.2D.2S. := (4 TO 6 Points) AND (Spades < 4) AND (Hearts < 4) ;
+$.1C.1D.2D.2N. := (4 TO 6 Points) AND (Spades < 4) AND (Hearts < 4) ;
+$.1C.1D.2D.3C. := (Clubs >= 5) AND (4 TO 6 Points) ;
+$.1C.1D.2D.3H. := (Hearts >= 6) AND (6 TO 7 Points) ;
+$.1C.1D.2D.3S. := (Spades >= 6) AND (6 TO 7 Points) ;
+
+## ---- Ch 6.2: Bidding after 1C-1D-2N (representative top level) ----
+$.1C.1D.2N.3C. := ((Spades >= 4) OR (Hearts >= 4)) OR (Points <= 5) OR
+                  ((Clubs >= 5) AND (Diamonds >= 5)) ;
+$.1C.1D.2N.3D. := Hearts >= 5 ;
+$.1C.1D.2N.3H. := Spades >= 5 ;
+$.1C.1D.2N.3S. := Diamonds >= 5 ;
+$.1C.1D.2N.3N. := Clubs >= 5 ;
+$.1C.1D.2N.3C.3D. := ($noMajor4) OR (Spades ?= 4) ;
+$.1C.1D.2N.3C.3H. := (Hearts ?= 4) AND (Spades < 4) ;
+
+## ---- Ch 6.3: Bidding after 1C-1D-2S (representative top level) ----
+$.1C.1D.2S.2N. := (2 TO 5 Points) AND ((Spades >= 4) OR (Clubs >= 6)) ;
+$.1C.1D.2S.3C. := (2 TO 7 Points) AND (((Clubs >= 3) AND (Diamonds >= 3)) OR (Spades < 4)) ;
+$.1C.1D.2S.3D. := (2 TO 5 Points) AND (Diamonds >= 6) ;
+$.1C.1D.2S.3H. := (2 TO 5 Points) AND (Hearts >= 6) ;
+$.1C.1D.2S.3S. := (3 TO 7 Points) AND $ctl0 ;
+$.1C.1D.2S.3N. := (3 TO 7 Points) AND $ctl1 ;
+
+## ---- Ch 6.4: Bidding after 1C-1D-2H (representative top level) ----
+$.1C.1D.2H.2S. := (2 TO 7 Points) AND (((Diamonds >= 3) AND (Hearts < 4)) OR (Hearts >= 3)) ;
+$.1C.1D.2H.2N. := (2 TO 5 Points) AND ((Clubs >= 6) OR (Hearts >= 4)) ;
+$.1C.1D.2H.3C. := (2 TO 5 Points) AND (Diamonds >= 6) ;
+$.1C.1D.2H.3D. := (2 TO 5 Points) AND (Spades >= 5) ;
+$.1C.1D.2H.3H. := (3 TO 7 Points) AND (Hearts >= 4) AND $ctl0 ;
+$.1C.1D.2H.3S. := (2 TO 5 Points) AND (Spades >= 6) ;
+$.1C.1D.2H.3N. := (3 TO 7 Points) AND (Hearts >= 4) AND $ctl1 ;
+
+
+## ============================================================
+## Ch 8 / 8.1-8.3: RESPONDING TO 1H/1S OPENING
+## ============================================================
+
+$.1Maj.1N. := Points >= 6 ;
+$.1Maj.2C. := $gf AND (Clubs >= 4) ;
+$.1Maj.2D. := $gf AND (Diamonds >= 4) AND (Clubs < 4) ;
+$.1Maj.2Maj. := Maj >= 3 ;
+$.1Maj.2N. := (Maj >= 4) AND $balanced AND $gf ;
+$.1Maj.4Maj. := (Maj >= 5) AND (Points <= 6) ;
+
+$.1H.1S. := (Points >= 5) AND (Spades >= 4) ;
+$.1H.2S. := (Points >= 16) AND (Spades >= 5) AND (Spts >= 6) ;
+$.1S.2H. := (Points >= 10) AND (Hearts >= 4) ; ## full detail in Ch 8.2 below
+
+$.1S.3C. := ((Spades ?= 4) AND (Clubs <= 2) AND (10 TO 12 Points)) OR
+            ((Clubs >= 4) AND (Spades >= 4) AND $slamish) ;
+$.1S.3D. := ((Spades ?= 4) AND (Diamonds <= 2) AND (10 TO 12 Points)) OR
+            ((Diamonds >= 4) AND (Spades >= 4) AND $slamish) ;
+$.1H.3C. := ((Hearts ?= 4) AND (Clubs <= 2) AND (10 TO 12 Points)) OR
+            ((Clubs >= 4) AND (Hearts >= 4) AND $slamish) ;
+$.1H.3D. := ((Hearts ?= 4) AND (Diamonds <= 2) AND (10 TO 12 Points)) OR
+            ((Diamonds >= 4) AND (Hearts >= 4) AND $slamish) ;
+
+## Forcing raise with some singleton (a named exception per major).
+$.1S.3N. := (Spades >= 4) AND $gf AND ((Hearts <= 1) OR (Diamonds <= 1) OR (Clubs <= 1)) ;
+$.1S.3N.4C. := Points >= 0 ;
+$.1S.3N.4C.4S. := (Clubs <= 1) AND (Points <= 13) ;
+$.1S.3N.4C.4N. := (Clubs <= 1) AND $aces0 ;
+$.1S.3N.4C.5C. := (Clubs <= 1) AND $aces1 ;
+$.1S.3N.4C.5D. := (Clubs <= 1) AND $aces2 ;
+$.1S.3N.4C.5H. := (Clubs <= 1) AND $aces3 ;
+$.1H.3S. := (Hearts >= 4) AND $gf AND ((Spades <= 1) OR (Diamonds <= 1) OR (Clubs <= 1)) ;
+$.1H.3S.3N. := Points >= 0 ;
+$.1H.3S.3N.4H. := (Spades <= 1) AND (Points <= 13) ;
+$.1H.3S.3N.4S. := (Spades <= 1) AND $aces0 ;
+$.1H.3S.3N.4N. := (Spades <= 1) AND $aces1 ;
+$.1H.3S.3N.5C. := (Spades <= 1) AND $aces2 ;
+$.1H.3S.3N.5D. := (Spades <= 1) AND $aces3 ;
+
+## Void-showing splinters, and the specific spade-void 1H-3N.
+$.1H.4C. := (Hearts >= 4) AND (Clubs ?= 0) AND $gf ;
+$.1H.4D. := (Hearts >= 4) AND (Diamonds ?= 0) AND $gf ;
+$.1S.4C. := (Spades >= 4) AND (Clubs ?= 0) AND $gf ;
+$.1S.4D. := (Spades >= 4) AND (Diamonds ?= 0) AND $gf ;
+$.1H.3N. := (Hearts >= 4) AND (Spades ?= 0) AND $gf ;
+
+## Kickback jump responses.
+$.1H.4S. := (Hearts >= 4) AND $slamish ;
+$.1H.4S.4N. := (Hkcs ?= 1) OR (Hkcs ?= 4) ;
+$.1H.4S.5C. := (Hkcs ?= 0) OR (Hkcs ?= 3) ;
+$.1H.4S.5D. := (Hkcs ?= 2) AND NOT Hq ;
+$.1H.4S.5H. := (Hkcs ?= 2) AND Hq ;
+$.1S.4N. := (Spades >= 4) AND $slamish ;
+$.1S.4N.5C. := (Skcs ?= 1) OR (Skcs ?= 4) ;
+$.1S.4N.5D. := (Skcs ?= 0) OR (Skcs ?= 3) ;
+$.1S.4N.5H. := (Skcs ?= 2) AND NOT Sq ;
+$.1S.4N.5S. := (Skcs ?= 2) AND Sq ;
+
+## ---- Game tries after 1M-2M ----
+$.1H.2H.3C. := (Hearts >= 4) AND (Clubs <= 1) AND (14 TO 16 Points) ;
+$.1H.2H.3D. := (Hearts >= 4) AND (Diamonds <= 1) AND (14 TO 16 Points) ;
+$.1S.2S.3C. := (Spades >= 4) AND (Clubs <= 1) AND (14 TO 16 Points) ;
+$.1S.2S.3D. := (Spades >= 4) AND (Diamonds <= 1) AND (14 TO 16 Points) ;
+$.1S.2S.3H. := (Spades >= 4) AND (Hearts <= 1) AND (14 TO 16 Points) ;
+$.1H.2H.3H. := (Hearts >= 4) AND $balanced AND (14 TO 16 Points) ;
+$.1S.2S.3S. := (Spades >= 4) AND $balanced AND (14 TO 16 Points) ;
+$.1H.2H.2N. := (Hearts >= 4) AND (Spades <= 1) AND (14 TO 16 Points) ;
+$.1H.2H.2S. := (Hearts >= 4) AND $slamish AND NOT ($noMajor4 AND $balanced) ;
+$.1H.2H.2S.2N. := Points >= 0 ;
+$.1H.2H.2S.2N.3H. := Spades >= 4 ;
+$.1S.2S.2N. := (Spades >= 4) AND $slamish AND NOT ($noMajor4 AND $balanced) ;
+$.1S.2S.2N.3C. := Points >= 0 ;
+$.1S.2S.2N.3C.3S. := Clubs >= 4 ;
+
+## ---- Bidding after 1H-1S-2N ----
+$.1H.1S.2N. := (shape [3-6-3-1] OR shape [3-5-4-1]) AND (Spades ?= 3) AND (Points >= 17) ;
+$.1H.1S.2N.3C. := $gf ;
+$.1H.1S.2N.3C.3D. := shape [3-5-4-1] ;
+$.1H.1S.2N.3C.3H. := shape [3-6-3-1] OR shape [3-6-4-0] ;
+$.1H.1S.2N.3C.3S. := shape [3-6-3-1] OR shape [3-6-4-0] ;
+$.1H.1S.2N.3C.3N. := shape [3-5-1-4] ;
+$.1H.1S.2N.3C.4C. := shape [3-5-5-0] ;
+$.1H.1S.2N.3C.4D. := shape [3-5-0-5] ;
+
+## ---- Bidding after 1M-2m: the systemic 3N rebid (minimum, 6-3-3-1,
+## short in responder's minor) ----
+$.1H.2C.3N. := shape [3-6-3-1] AND (Clubs <= 1) AND (Points <= 16) ;
+$.1H.2D.3N. := shape [3-6-1-3] AND (Diamonds <= 1) AND (Points <= 16) ;
+$.1S.2C.3N. := shape [6-3-3-1] AND (Clubs <= 1) AND (Points <= 16) ;
+$.1S.2D.3N. := shape [6-3-1-3] AND (Diamonds <= 1) AND (Points <= 16) ;
+
+## ---- Ch 8.1: Bidding after 1S-1N ----
+$.1S.1N.2C. := (Clubs ?= 4) OR ((Points ?= 14) AND $balanced AND (Clubs ?= 3)) ;
+$.1S.1N.2D. := (Diamonds ?= 4) OR ((Points ?= 14) AND $balanced AND (Diamonds ?= 3)) ;
+$.1S.1N.2H. := Hearts ?= 4 ;
+$.1S.1N.2S. := Spades ?= 6 ;
+$.1S.1N.2N. := (15 TO 16 Points) AND $balanced ;
+$.1S.1N.3C. := (Clubs ?= 5) AND (Points <= 16) ;
+$.1S.1N.3D. := (Diamonds ?= 5) AND (Points <= 16) ;
+$.1S.1N.3H. := (Hearts >= 4) AND (Hpts >= 6) ;
+$.1S.1N.3S. := (Spades >= 6) AND (Spts >= 7) AND NOT $balanced ;
+$.1S.1N.3N. := (Spades >= 6) AND (Spts >= 7) AND $balanced ;
+$.1S.1N.2C.2D. := (Diamonds >= 4) AND (Points <= 5) ;
+$.1S.1N.2C.2H. := (Hearts >= 4) AND (Points <= 5) ;
+$.1S.1N.2C.2S. := (Spades ?= 2) AND (Points <= 8) ;
+$.1S.1N.2D.2S. := (Spades ?= 2) AND (Points <= 8) ;
+$.1S.1N.2C.2N. := (10 TO 11 Points) AND $balanced ;
+$.1S.1N.2C.3S. := (shape [4,3,3,3] OR (Spades ?= 3)) AND (9 TO 11 Points) ;
+
+## ---- Ch 8.2: Bidding after 1S-2H ----
+$.1S.2H.3H. := (Hearts >= 3) AND (Points <= 13) ;
+$.1S.2H.4H. := (Hearts >= 3) AND (14 TO 16 Points) ;
+$.1S.2H.4C. := (Hearts >= 3) AND (Clubs <= 1) AND $gf ;
+$.1S.2H.4D. := (Hearts >= 3) AND (Diamonds <= 1) AND $gf ;
+$.1S.2H.3S. := (Hearts >= 3) AND $slamish AND (Spades >= 1) AND (Diamonds >= 1) AND (Clubs >= 1) ;
+$.1S.2H.3N. := (Hearts < 3) AND (13 TO 16 Points) AND ($balanced OR shape [5,4,2,2] OR shape [6,3,2,2]) ;
+$.1S.2H.2N. := (Hearts < 3) AND (11 TO 13 Points) AND ($balanced OR shape [5,4,2,2] OR shape [6,3,2,2]) ;
+$.1S.2H.3C. := (Clubs >= 5) AND (Hearts < 3) ;
+$.1S.2H.3D. := (Diamonds >= 5) AND (Hearts < 3) ;
+$.1S.2H.2S. := (Hearts < 3) AND NOT ((11 TO 16 Points) AND $balanced) ;
+$.1S.2H.2S.2N. := $balanced AND (Points <= 16) ;
+$.1S.2H.2S.3C. := Clubs >= 5 ;
+$.1S.2H.2S.3D. := Diamonds >= 5 ;
+$.1S.2H.2S.3H. := Hearts >= 3 ;
+$.1S.2H.2S.3S. := (Spades >= 4) AND (Sq OR Sk OR Sa) ;
+$.1S.2H.3D.3H. := (Hearts >= 3) AND $gf ;
+$.1S.2H.3C.3D. := $gf ;
+
+## ---- Ch 8.3: The Jacoby 2N response ----
+$.1H.2N.3C. := (Hearts >= 4) AND ((Spades ?= 1) OR (Diamonds ?= 1) OR (Clubs ?= 1)) AND
+               NOT (Hearts >= 5 AND (Spades >= 5 OR Diamonds >= 5 OR Clubs >= 5)) ;
+$.1S.2N.3C. := (Spades >= 4) AND ((Hearts ?= 1) OR (Diamonds ?= 1) OR (Clubs ?= 1)) AND
+               NOT (Spades >= 5 AND (Hearts >= 5 OR Diamonds >= 5 OR Clubs >= 5)) ;
+$.1H.2N.3D. := (Hearts ?= 4) AND (shape [5,4,2,2] OR shape [6,3,2,2]) ;
+$.1S.2N.3D. := (Spades ?= 4) AND (shape [5,4,2,2] OR shape [6,3,2,2]) ;
+$.1H.2N.3H. := (Hearts >= 4) AND (shape [5,5,3,0] OR shape [6,5,2,0]) ;
+$.1S.2N.3H. := (Spades >= 4) AND (shape [5,5,3,0] OR shape [6,5,2,0]) ;
+$.1H.2N.3S. := (Hearts >= 4) AND ((Spades ?= 0) OR (Diamonds ?= 0) OR (Clubs ?= 0)) AND
+               NOT (shape [5,5,3,0] OR shape [6,5,2,0]) ;
+$.1S.2N.3S. := (Spades >= 4) AND ((Hearts ?= 0) OR (Diamonds ?= 0) OR (Clubs ?= 0)) AND
+               NOT (shape [5,5,3,0] OR shape [6,5,2,0]) ;
+$.1H.2N.3N. := (Hearts ?= 4) AND shape [5,3,3,2] AND (14 TO 16 Points) ;
+$.1S.2N.3N. := (Spades ?= 4) AND shape [5,3,3,2] AND (14 TO 16 Points) ;
+$.1H.2N.4H. := (Hearts >= 5) AND (Spades >= 5) AND (Clubs <= 1) AND (Diamonds <= 1) ;
+$.1S.2N.4S. := (Spades >= 5) AND (Points <= 10) ;
+$.1H.2N.3C.3D. := $slamish ;
+$.1H.2N.3C.3D.3H. := Hearts ?= 6 ;
+$.1S.2N.3C.3D. := $slamish ;
+$.1S.2N.3C.3D.3S. := Spades ?= 6 ;
+
+
+## ============================================================
+## Ch 9 / 9.1: BIDDING AFTER 1D OPENING
+## ============================================================
+
+$.1D.1H. := (Hearts >= 4) AND (Points >= 6) ;
+$.1D.1S. := (Spades >= 4) AND (Hearts < 4) AND (Points >= 6) ;
+$.1D.1N. := (8 TO 10 Points) AND $noMajor4 ;
+$.1D.2C. := (Points >= 10) AND (Clubs >= 5) AND ($noMajor4 OR $gf) ;
+$.1D.2D. := (Diamonds >= 4) AND (10 TO 12 Points) AND $noMajor4 ;
+$.1D.2H. := (Points >= 15) AND ((Hearts >= 6) OR ((Hearts >= 5) AND $balanced AND (15 TO 17 Points))) ;
+$.1D.2S. := (Points >= 15) AND ((Spades >= 6) OR ((Spades >= 5) AND $balanced AND (15 TO 17 Points))) ;
+$.1D.2N. := (10 TO 12 Points) AND $balanced AND $noMajor5 AND (Clubs < 5) ;
+$.1D.3C. := (Clubs ?= 6) AND ((Ca AND Ck) OR (Ca AND Cq) OR (Ck AND Cq)) AND (Points <= 10) ;
+$.1D.3Maj. := (Maj >= 6) AND (Points <= 10) ;
+$.1D.4C. := (Clubs >= 7) AND (Points <= 10) ;
+$.1D.4H. := (Hearts >= 7) AND (Points <= 10) ;
+$.1D.4S. := (Spades >= 7) AND (Points <= 10) ;
+$.1D.3N. := (13 TO 15 Points) AND $balanced AND $noMajor5 AND (Clubs < 5) ;
+
+## ---- Bidding after 1D-1M (opener's rebids) ----
+$.1D.1H.1S. := Spades >= 4 ;
+$.1D.1H.1N. := (14 TO 16 Points) AND $balanced ;
+$.1D.1S.1N. := (14 TO 16 Points) AND $balanced ;
+$.1D.1H.2C. := (Clubs ?= 5 AND Diamonds ?= 4) OR (Clubs ?= 4 AND Diamonds ?= 5) ;
+$.1D.1S.2C. := (Clubs ?= 5 AND Diamonds ?= 4) OR (Clubs ?= 4 AND Diamonds ?= 5) ;
+$.1D.1H.2D. := (Diamonds ?= 6) AND (Points <= 16) ;
+$.1D.1S.2D. := (Diamonds ?= 6) AND (Points <= 16) ;
+$.1D.1H.2S. := (15 TO 16 Points) AND (Diamonds >= 5) AND (Spades >= 4) ;
+$.1D.1S.2H. := (15 TO 16 Points) AND (Diamonds >= 5) AND (Hearts >= 4) ;
+$.1D.1H.2H. := (Hearts >= 3) AND (Points <= 14) ;
+$.1D.1S.2S. := (Spades >= 3) AND (Points <= 14) ;
+## (2N here is detailed under "Bidding after 1D-1M-2N" below.)
+$.1D.1H.3C. := (Clubs >= 5) AND (Diamonds >= 5) AND (Points >= 15) ;
+$.1D.1S.3C. := (Clubs >= 5) AND (Diamonds >= 5) AND (Points >= 15) ;
+$.1D.1H.3D. := (Diamonds >= 6) AND (Dpts >= 6) AND (Hearts < 3) AND (Points >= 15) ;
+$.1D.1S.3D. := (Diamonds >= 6) AND (Dpts >= 6) AND (Spades < 3) AND (Points >= 15) ;
+$.1D.1H.3S. := (Hearts >= 3) AND (Spades <= 1) AND $gf ;
+$.1D.1S.3H. := (Spades >= 3) AND (Hearts <= 1) AND $gf ;
+$.1D.1H.4C. := (Hearts >= 3) AND (Clubs <= 1) AND $gf ;
+$.1D.1S.4C. := (Spades >= 3) AND (Clubs <= 1) AND $gf ;
+$.1D.1H.3H. := (Hearts >= 4) AND (Points >= 15) AND $balanced ;
+$.1D.1S.3S. := (Spades >= 4) AND (Points >= 15) AND $balanced ;
+$.1D.1H.4D. := (Diamonds >= 6) AND (Dpts >= 9) AND (Hearts >= 4) ;
+$.1D.1S.4D. := (Diamonds >= 6) AND (Dpts >= 9) AND (Spades >= 4) ;
+
+## ---- Bidding after 1D-1M-1N ----
+$.1D.1H.1N.2C. := (Hearts >= 5) AND (Points >= 8) ;
+$.1D.1S.1N.2C. := (Spades >= 5) AND (Points >= 8) ;
+$.1D.1H.1N.2D. := (Hearts ?= 5) AND NOT $balanced AND ((Clubs >= 4) OR (Diamonds >= 4)) AND (7 TO 9 Points) ;
+$.1D.1S.1N.2D. := (Spades ?= 5) AND NOT $balanced AND ((Clubs >= 4) OR (Diamonds >= 4)) AND (7 TO 9 Points) ;
+$.1D.1H.1N.2H. := (Hearts ?= 4) AND (7 TO 9 Points) ;
+$.1D.1S.1N.2S. := (Spades ?= 4) AND (7 TO 9 Points) ;
+$.1D.1H.1N.3C. := (Clubs >= 6) AND (Hearts ?= 4) AND (7 TO 9 Points) ;
+$.1D.1S.1N.3C. := (Clubs >= 6) AND (Spades ?= 4) AND (7 TO 9 Points) ;
+
+## ---- Bidding after 1D-1M-2N ----
+$.1D.1H.2N. := (Hearts ?= 3) AND (shape [6,3,3,1] OR shape [5,4,3,1]) AND (Points >= 15) ;
+$.1D.1S.2N. := (Spades ?= 3) AND (shape [6,3,3,1] OR shape [5,4,3,1]) AND (Points >= 15) ;
+$.1D.1H.2N.3C. := $gf ;
+$.1D.1S.2N.3C. := $gf ;
+$.1D.1H.2N.3C.3D. := (Diamonds >= 6) AND (Clubs <= 1) ;
+$.1D.1H.2N.3C.3H. := (Diamonds >= 6) AND (Spades <= 1) ;
+$.1D.1H.2N.3C.3S. := (Diamonds >= 5) AND (Clubs ?= 4) ;
+$.1D.1S.2N.3C.3D. := (Diamonds >= 6) AND (Clubs <= 1) ;
+$.1D.1S.2N.3C.3H. := (Diamonds >= 6) AND (Hearts <= 1) ;
+$.1D.1S.2N.3C.3S. := (Diamonds >= 5) AND (Clubs ?= 4) ;
+
+## ---- Other sequences after 1D-1M ----
+$.1D.1S.2H.2N. := Points >= 0 ;
+$.1D.1H.2S.2N. := Points >= 0 ;
+$.1D.1S.2H.2N.3C. := Points >= 0 ;
+$.1D.1S.2H.2N.3C.3D. := Diamonds >= 2 ;
+$.1D.1S.2H.2N.3C.3S. := (Spades >= 4) AND $inv ;
+$.1D.1H.2S.2N.3C. := Points >= 0 ;
+$.1D.1H.2S.2N.3C.3D. := Diamonds >= 2 ;
+$.1D.1H.2S.2N.3C.3H. := (Hearts >= 4) AND $inv ;
+$.1D.1S.2C.2H. := $gf AND NOT (Hearts >= 5) ;
+$.1D.1S.2C.2H.2S. := (Spades ?= 3) AND (Points <= 16) ;
+$.1D.1S.2C.2H.2N. := (Points <= 16) AND (Ha OR Hk OR Hq) ;
+$.1D.1S.2C.2H.3H. := shape [4,4,4,1] ;
+$.1D.1S.2C.2H.3S. := (Spades >= 3) AND (Points >= 17) ;
+$.1D.1S.2C.2H.3N. := (Points >= 17) AND (Ha OR Hk OR Hq) ;
+
+## ---- Ch 9.1: Checkback Auctions ----
+
+## After 1D-1S-1N-2C-2S.
+$.1D.1S.1N.2C.2S.2N. := Points >= 0 ;
+$.1D.1S.1N.2C.2S.2N.3C. := Clubs >= 5 ;
+$.1D.1S.1N.2C.2S.2N.3D. := Diamonds >= 5 ;
+$.1D.1S.1N.2C.2S.2N.3H. := Hearts ?= 4 ;
+$.1D.1S.1N.2C.2S.2N.3S. := (Clubs ?= 4) AND (Diamonds ?= 4) ;
+$.1D.1S.1N.2C.2S.2N.3N. := shape [3,3,4,3] OR shape [3,3,3,4] ;
+$.1D.1S.1N.2C.2S.3C. := (Clubs >= 4) AND $gf ;
+$.1D.1S.1N.2C.2S.3D. := (Diamonds >= 4) AND $gf ;
+$.1D.1S.1N.2C.2S.3H. := (Hearts >= 5) AND (Spades >= 5) AND $gf ;
+$.1D.1S.1N.2C.2S.3S. := (Spades >= 3) AND $inv ;
+$.1D.1S.1N.2C.2S.4C. := (Spades >= 3) AND (Clubs <= 1) AND $gf ;
+$.1D.1S.1N.2C.2S.4H. := (Spades >= 3) AND (Hearts <= 1) AND $gf ;
+$.1D.1S.1N.2C.2S.3N. := (Spades >= 5) AND $slamish AND (Hearts >= 1) AND (Diamonds >= 1) AND (Clubs >= 1) ;
+
+## After 1D-1S-1N-2C-2H.
+$.1D.1S.1N.2C.2H.2S. := Points >= 0 ;
+$.1D.1S.1N.2C.2H.2S.2N. := shape [2-4-4-3] ;
+$.1D.1S.1N.2C.2H.2S.3C. := shape [2-4-3-4] ;
+$.1D.1S.1N.2C.2H.2S.3D. := shape [2-4-5-2] ;
+$.1D.1S.1N.2C.2H.3N. := $balanced AND (10 TO 13 Points) ;
+$.1D.1S.1N.2C.2H.3C. := (Clubs >= 4) AND $gf ;
+$.1D.1S.1N.2C.2H.3D. := (Diamonds >= 4) AND $gf ;
+$.1D.1S.1N.2C.2H.3H. := (Hearts >= 5) AND $inv ;
+$.1D.1S.1N.2C.2H.3S. := (Spades >= 6) AND $gf ;
+$.1D.1S.1N.2C.2H.4C. := (Hearts >= 5) AND (Clubs <= 1) AND $gf ;
+
+## After 1D-1S-1N-2C-2D.
+$.1D.1S.1N.2C.2D.2H. := Points >= 0 ;
+$.1D.1S.1N.2C.2D.2H.2S. := (Spades ?= 2) AND (Hearts ?= 2) ;
+$.1D.1S.1N.2C.2D.2H.2N. := shape [2-3-4-4] ;
+$.1D.1S.1N.2C.2D.2H.3C. := shape [2-3-3-5] ;
+$.1D.1S.1N.2C.2D.2H.3D. := shape [2-3-5-3] OR shape [2-3-6-2] ;
+$.1D.1S.1N.2C.2D.2S. := (Spades >= 5) AND NOT $balanced AND $gf ;
+$.1D.1S.1N.2C.2D.3C. := (Clubs >= 4) AND $gf ;
+$.1D.1S.1N.2C.2D.3D. := (Diamonds >= 4) AND $gf ;
+$.1D.1S.1N.2C.2D.3H. := (Hearts >= 5) AND (Spades >= 5) AND $gf ;
+$.1D.1S.1N.2C.2D.3S. := (Spades >= 6) AND $gf ;
+
+## After 1D-1H-1N-2C-2H.
+$.1D.1H.1N.2C.2H.2S. := Points >= 0 ;
+$.1D.1H.1N.2C.2H.2S.2N. := shape [3,3,3,4] OR shape [3,3,4,3] ;
+$.1D.1H.1N.2C.2H.2S.3C. := shape [2,3,3,5] OR shape [3,3,2,5] ;
+$.1D.1H.1N.2C.2H.2S.3D. := shape [2,3,5,3] OR shape [2,3,6,2] OR shape [3,3,5,2] ;
+$.1D.1H.1N.2C.2H.2N. := (Hearts ?= 5) AND $balanced AND $inv ;
+$.1D.1H.1N.2C.2H.3C. := (Clubs >= 4) AND $gf ;
+$.1D.1H.1N.2C.2H.3D. := (Diamonds >= 4) AND $gf ;
+$.1D.1H.1N.2C.2H.3H. := (Hearts ?= 5) AND NOT $balanced AND $inv ;
+$.1D.1H.1N.2C.2H.3S. := (Hearts >= 5) AND (Spades <= 1) AND $gf ;
+$.1D.1H.1N.2C.2H.4C. := (Hearts >= 5) AND (Clubs <= 1) AND $gf ;
+
+## After 1D-1H-1N-2C-2D.
+$.1D.1H.1N.2C.2D.2H. := Points >= 0 ;
+$.1D.1H.1N.2C.2D.2H.2S. := shape [2,2,5,4] OR shape [2,2,4,5] ;
+$.1D.1H.1N.2C.2D.2H.2N. := shape [3,2,4,4] ;
+$.1D.1H.1N.2C.2D.2H.3C. := shape [3,2,3,5] ;
+$.1D.1H.1N.2C.2D.2H.3D. := shape [3,2,5,3] OR shape [3,2,6,2] OR shape [2,2,6,3] ;
+$.1D.1H.1N.2C.2D.2S. := (Spades <= 2) AND (Hearts >= 5) AND $inv ;
+$.1D.1H.1N.2C.2D.3N. := $balanced AND (Hearts ?= 5) ;
+$.1D.1H.1N.2C.2D.3C. := (Clubs >= 4) AND $gf ;
+$.1D.1H.1N.2C.2D.3D. := (Diamonds >= 4) AND $gf ;
+$.1D.1H.1N.2C.2D.3H. := (Hearts >= 6) AND $gf ;
+
+## ---- Bidding After 1D-1H-1S (4 spades and 5+ diamonds, or 4-1-4-4) ----
+$.1D.1H.1S.3C. := (Clubs >= 6) AND (Hearts ?= 4) AND $inv ;
+$.1D.1H.1S.3D. := (Diamonds >= 4) AND (Hearts ?= 4) AND $inv ;
+$.1D.1H.1S.2C. := $gf ;
+$.1D.1H.1S.2C.2D. := (Diamonds >= 6) AND (Hearts <= 2) ;
+$.1D.1H.1S.2C.2H. := Hearts ?= 3 ;
+$.1D.1H.1S.2C.2S. := Hearts ?= 1 ;
+$.1D.1H.1S.2C.2N. := shape [4-2-5-2] ;
+$.1D.1H.1S.2C.3C. := shape [4-0-4-5] ;
+$.1D.1H.1S.2C.3D. := shape [4-0-5-4] ;
+
+
+## ============================================================
+## Ch 10 / 10.1 / 10.2: THE TWO-CLUB OPENING
+## ============================================================
+## Two clubs: 11-16, 5 clubs and 4 spades or 4 hearts, or 6+ clubs,
+## or 15-16 with 5+ clubs and 4 diamonds (already defined in Ch 1).
+
+$.2C.2H. := (Hearts >= 5) AND (Clubs < 3) ;
+$.2C.2S. := (Spades >= 5) AND (Hearts < 5) AND (Clubs < 3) ;
+$.2C.2N. := (Clubs >= 3) AND (Cq OR Ck OR Ca) AND $noMajor4 ;
+$.2C.3C. := (Diamonds >= 5) AND $noMajor4 ;
+$.2C.3D. := (Hearts >= 5) AND (Spades < 4) ;
+$.2C.3H. := (Spades >= 5) AND (Hearts < 4) ;
+$.2C.3N. := $balanced AND (Points <= 7) ;
+$.2C.2D. := ((Spades ?= 4) OR (Hearts ?= 4)) OR
+            NOT ((Hearts >= 5) OR (Spades >= 5) OR ((Clubs >= 3) AND (Cq OR Ck OR Ca)) OR
+                 (Diamonds >= 5) OR $balanced) ;
+
+## ---- Ch 10.1: Bidding After 2C-2D ----
+$.2C.2D.2H. := Hearts ?= 4 ;
+$.2C.2D.2S. := (Spades ?= 4) AND (Hearts < 4) ;
+$.2C.2D.2N. := $noMajor4 AND (13 TO 14 Points) ;
+$.2C.2D.3C. := $noMajor4 AND (11 TO 12 Points) ;
+$.2C.2D.3D. := (Clubs ?= 5) AND (Diamonds ?= 4) AND (14 TO 16 Points) ;
+$.2C.2D.3H. := (Hearts ?= 4) AND (Clubs >= 6) AND (14 TO 16 Points) ;
+$.2C.2D.3S. := (Spades ?= 4) AND (Hearts < 4) AND (Clubs >= 6) AND (14 TO 16 Points) ;
+$.2C.2D.3N. := $noMajor4 AND (Clubs >= 6) AND (14 TO 16 Points) ;
+$.2C.2D.2H.2N. := 10 TO 11 Points ;
+$.2C.2D.2H.3C. := (8 TO 9 Points) AND (Hearts >= 3) ;
+$.2C.2D.2H.3D. := (Diamonds >= 5) AND (Hearts >= 4) AND $gf ;
+$.2C.2D.2H.3H. := (Hearts >= 4) AND $inv ;
+$.2C.2D.2H.4C. := (Hearts >= 4) AND $inv ;
+$.2C.2D.2H.3S. := (Hearts >= 4) AND (Spades >= 4) AND $gf ;
+
+## ---- Ch 10.2: Other Sequences After 2C ----
+$.2C.2H.2N. := (Hearts < 4) AND (13 TO 14 Points) ;
+$.2C.2H.3C. := (Hearts < 4) AND (11 TO 12 Points) ;
+$.2C.2H.3D. := (Clubs >= 5) AND (Diamonds ?= 4) AND (Hearts < 4) AND (14 TO 16 Points) ;
+$.2C.2H.3H. := (Hearts >= 3) AND $inv ;
+$.2C.2H.2S. := (Clubs >= 5) AND (Spades ?= 4) AND (11 TO 16 Points) ;
+$.2C.2S.3H. := (Clubs >= 6) AND (Hearts ?= 4) AND (15 TO 16 Points) ;
+$.2C.2H.3N. := (Hearts < 4) AND (Clubs >= 6) AND (15 TO 16 Points) ;
+$.2C.2S.2N. := (Spades < 4) AND (13 TO 14 Points) ;
+$.2C.2S.3C. := (Spades < 4) AND (11 TO 12 Points) ;
+$.2C.2S.3D. := (Clubs >= 5) AND (Diamonds ?= 4) AND (Spades < 4) AND (14 TO 16 Points) ;
+$.2C.2S.3S. := (Spades >= 3) AND $inv ;
+$.2C.2S.3N. := (Spades < 4) AND (Clubs >= 6) AND (15 TO 16 Points) ;
+
+$.2C.2N.3C. := Points >= 0 ;
+$.2C.2N.3C.3D. := (Diamonds >= 5) AND $gf ;
+$.2C.2N.3C.3H. := (Hearts >= 5) AND $gf ;
+$.2C.2N.3C.3S. := (Spades >= 5) AND $gf ;
+$.2C.2N.3C.3N. := (Clubs >= 3) AND $slamish ;
+$.2C.2N.3C.4C. := (Clubs >= 3) AND $balanced AND $slamish ;
+$.2C.2N.3C.4D. := (Clubs >= 3) AND $slamish ;
+$.2C.2N.3C.4D.4H. := (Ckcs ?= 1) OR (Ckcs ?= 4) ;
+$.2C.2N.3C.4D.4S. := (Ckcs ?= 0) OR (Ckcs ?= 3) ;
+$.2C.2N.3C.4D.4N. := (Ckcs ?= 2) AND NOT Cq ;
+$.2C.2N.3C.4D.5C. := (Ckcs ?= 2) AND Cq ;
+
+$.2C.3C.3D. := Points >= 0 ;
+$.2C.3C.3D.3H. := (Diamonds >= 5) AND (Hearts >= 5) AND $gf ;
+$.2C.3C.3D.3S. := (Diamonds >= 5) AND (Spades >= 5) AND $gf ;
+$.2C.3D.3H. := Points >= 0 ;
+$.2C.3D.3H.3S. := (Hearts >= 5) AND (Spades >= 5) AND $gf ;
+
+
+## ============================================================
+## Ch 11: THE TWO-HEART OPENING
+## ============================================================
+## 11-16, 4-4-1-4/4-4-0-5, or 14-16, 4-3-1-5/3-4-1-5 with QTx+
+## (already defined in Ch 1).
+
+$.2H.2S. := Points <= 8 ;
+$.2H.3C. := (Clubs >= 5) AND (Points <= 8) ;
+$.2H.2N. := Points >= 9 ;
+$.2H.3D. := (Clubs >= 4) AND ((Spades >= 4) OR (Hearts >= 4)) AND (9 TO 12 Points) ;
+$.2H.3H. := (Hearts >= 3) AND $gf ;
+$.2H.3S. := (Spades >= 3) AND $gf ;
+$.2H.4C. := (Clubs >= 3) AND $gf ;
+
+## ---- Bidding after 2H-2N ----
+$.2H.2N.3C. := shape [3-4-1-5] ;
+$.2H.2N.3D. := shape [4-3-1-5] ;
+$.2H.2N.3H. := shape [4-4-1-4] AND (11 TO 13 Points) ;
+$.2H.2N.3S. := shape [4-4-1-4] AND (14 TO 16 Points) AND NOT (Da OR Dk OR Dq) ;
+$.2H.2N.3N. := shape [4-4-1-4] AND (14 TO 16 Points) AND (Da OR Dk OR Dq) ;
+$.2H.2N.4C. := shape [4-4-0-5] AND (11 TO 13 Points) ;
+$.2H.2N.4D. := shape [4-4-0-5] AND (14 TO 16 Points) AND NOT (Ha OR Hk) ;
+$.2H.2N.4H. := shape [4-4-0-5] AND (14 TO 16 Points) AND (Ha OR Hk) ;
+
+## ---- Bidding after 2H-3D ----
+$.2H.3D.3H. := (shape [4-4-1-4] AND (11 TO 13 Points)) OR (shape [4-4-0-5] AND (11 TO 12 Points)) ;
+$.2H.3D.3S. := shape [4-3-1-5] ;
+$.2H.3D.3S.3N. := Da OR Dk OR Dq ;
+$.2H.3D.3N. := shape [3-4-1-5] AND (Da OR Dk OR Dq) ;
+$.2H.3D.4C. := shape [3-4-1-5] AND NOT (Da OR Dk OR Dq) ;
+$.2H.3D.4D. := (shape [4-4-1-4] AND (14 TO 16 Points)) OR (shape [4-4-0-5] AND (13 TO 15 Points)) ;
+$.2H.3D.4H. := shape [4-4-0-5] AND (15 TO 16 Points) ;
+
+
+## ============================================================
+## Ch 12: THE TWO-NOTRUMP OPENING
+## ============================================================
+## Weak, 5-5+ in the majors or in the minors (already defined in
+## Ch 1). Responses commit to one of opener's (ambiguous) suit pairs;
+## since which pair opener actually holds isn't knowable from
+## responder's hand alone, the preference bids below are necessarily
+## approximate.
+
+$.2N.3C. := Points <= 8 ;
+$.2N.3D. := (Diamonds >= 2) AND (Points <= 8) ;
+$.2N.3H. := (Hearts >= 2) AND (9 TO 12 Points) ;
+$.2N.3S. := (Spades >= 2) AND (9 TO 12 Points) ;
+$.2N.3N. := $balanced AND (13 TO 15 Points) ;
+$.2N.4C. := $slamish ;
+$.2N.4D. := ((Hearts >= 6) AND (Hpts >= 6)) OR ((Spades >= 6) AND (Spts >= 6)) ;
+$.2N.4D.4H. := Points >= 0 ;
+$.2N.4H. := (Hearts >= 4) AND (Points >= 13) ;
+$.2N.4S. := (Spades >= 4) AND (Points >= 13) ;
+$.2N.4N. := $slamish ;
+$.2N.4N.5C. := $aces0 ;
+$.2N.4N.5D. := $aces1 ;
+$.2N.4N.5H. := $aces2 ;
+$.2N.4N.5S. := $aces3 ;
+
+## ---- Opener's Rebids after 2N-4C ----
+$.2N.4C.4D. := (Hearts >= 5 OR Spades >= 5) AND (Points >= 9) ;
+$.2N.4C.4H. := (Hearts >= 5 OR Spades >= 5) AND (Points <= 6) ;
+$.2N.4C.4S. := (Clubs >= 5 AND Diamonds >= 5) AND (Points >= 9) ;
+$.2N.4C.4N. := (Clubs >= 5 AND Diamonds >= 5) AND (Points <= 6) AND (Hearts <= 1) ;
+$.2N.4C.5C. := (Clubs >= 5 AND Diamonds >= 5) AND (Points <= 6) AND (Spades <= 1) ;
+
+
+## ============================================================
+## Ch 13: THE TWO-SPADE OPENING
+## ============================================================
+## Weak, 5-5+ in the reds or in the blacks (already defined in
+## Ch 1); the same ambiguous-pair caveat as Ch 12 applies below.
+
+$.2S.2N. := $slamish ;
+$.2S.2N.3C. := (Clubs >= 2) AND (Points <= 7) ;
+$.2S.2N.3D. := (Diamonds >= 2) AND (Points <= 7) ;
+$.2S.2N.3H. := (Hearts >= 2) AND (9 TO 12 Points) ;
+$.2S.2N.3S. := (Spades >= 2) AND (9 TO 12 Points) ;
+$.2S.3C. := (Clubs >= 2) AND (Points <= 8) ;
+$.2S.3D. := ((Diamonds >= 2) OR (Hearts >= 2)) AND (Points <= 8) ;
+$.2S.3H. := ((Diamonds >= 2) OR (Hearts >= 2)) AND (Points <= 8) ;
+$.2S.3S. := ((Spades >= 2) OR (Clubs >= 2)) AND (Points <= 8) ;
+$.2S.3N. := $balanced AND (9 TO 13 Points) ;
+$.2S.4C. := $slamish ;
+$.2S.4D. := $soundClubSuit OR $soundDiamondSuit OR ((Hearts >= 7) AND (Hpts >= 7)) OR ((Spades >= 7) AND (Spts >= 7)) ;
+$.2S.4D.4H. := Points >= 0 ;
+$.2S.4H. := (Hearts >= 4) AND ((Clubs >= 4) OR (Diamonds >= 4)) AND (Points >= 9) ;
+$.2S.4S. := (Spades >= 4) AND ((Clubs >= 4) OR (Diamonds >= 4)) AND (Points >= 9) ;
+
+## ---- Opener's Rebids after 2S-4C ----
+$.2S.4C.4D. := (Hearts >= 5 AND Diamonds >= 5) AND (Points >= 9) ;
+$.2S.4C.4H. := (Hearts >= 5 AND Diamonds >= 5) AND (Points <= 6) ;
+$.2S.4C.4S. := (Spades >= 5 AND Clubs >= 5) AND (Points <= 6) ;
+$.2S.4C.4N. := (Spades >= 5 AND Clubs >= 5) AND (Points >= 9) AND (Diamonds <= 1) ;
+$.2S.4C.5C. := (Spades >= 5 AND Clubs >= 5) AND (Points >= 9) AND (Hearts <= 1) ;
+$.2S.4C.5D. := (Diamonds <= 1) AND (Points >= 9) AND (Sa OR Ha OR Da OR Ca) ;
+$.2S.4C.5H. := (Hearts <= 1) AND (Points >= 9) AND (Sa OR Ha OR Da OR Ca) ;
+$.2S.4C.5S. := (Spades <= 1) AND (Points >= 9) AND (Sa OR Ha OR Da OR Ca) ;
+$.2S.4C.5N. := (Clubs <= 1) AND (Points >= 9) AND (Sa OR Ha OR Da OR Ca) ;
+END

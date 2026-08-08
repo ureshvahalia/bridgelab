@@ -4,10 +4,12 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <string>
 #include <unordered_map>
 #include "tnode.h"
 #include "log.h"
+#include "simplify.hpp"
 
 TPTR defroot;	/* root of definitions tree */
 
@@ -20,6 +22,89 @@ TPTR defroot;	/* root of definitions tree */
  * stay scoped to the tree they were asked about rather than always
  * reflecting whichever tree happened to be parsed most recently. */
 static std::unordered_map<TPTR, std::unordered_map<std::string, TPTR>> defIndex;
+
+// ── Transient-node arena ────────────────────────────────────────────────
+//
+// combineRule()/negateRule()/simplifyRule() never mutate an existing node
+// (see simplify.hpp) -- correctness requires that, since the rule they're
+// combining is a pointer into the single, process-lifetime rule-definition
+// tree (findRule()'s result, reused by every hand that ever reaches that
+// bid, for the life of the process), spliced in by reference. But that
+// means every node THEY construct is transient: it belongs only to the
+// current hand's bidding accumulator, is rebuilt from scratch by the next
+// combine, and is never reachable once that hand's auction is discarded.
+// Nothing ever frees it on its own -- this arena does, in bulk, without
+// needing to know which nodes in a given tree are "ours" (transient) vs.
+// spliced in from the permanent tree: tnodeArenaBegin()/tnodeArenaEnd()
+// bracket one hand's worth of
+// accumulator-building (see bidlab.cpp's main()), and make_leaf() routes
+// through the arena instead of malloc() only while one is active, so
+// nothing built at rule-load time (or by the self-test harness) is ever at
+// risk of being swept up in a reset -- those calls happen with no arena
+// active and keep using plain malloc(), same as before this existed.
+//
+// Not thread-safe: the only callers of make_leaf() during bidding
+// (combineRule()/negateRule(), via findMatchingChild()) run on bidlab's
+// single-threaded auction loop -- -fopenmp in the build is only for
+// linking against the DDS library, never used in this codebase's own code.
+static const size_t ARENA_BLOCK_NODES = 65536;   // ~68MB/block -- comfortably covers one hand's node churn across all 3 systems (observed ~40-50K nodes/rep) before a second block is needed
+
+struct tnodeArenaBlock {
+    tnodeArenaBlock* next;
+    size_t           used;       // nodes handed out from this block so far
+    size_t           capacity;
+    struct tnode*    nodes;      // malloc'd once, reused block-to-block across hands
+};
+
+static tnodeArenaBlock* g_arenaBlocks  = NULL;   // every block ever allocated -- kept (not freed) for reuse by later hands
+static tnodeArenaBlock* g_arenaCurrent = NULL;   // block currently being filled; NULL means the arena is inactive (make_leaf() falls back to malloc())
+
+static tnodeArenaBlock*
+tnodeArenaNewBlock (size_t capacity)
+{
+    tnodeArenaBlock* b = (tnodeArenaBlock*)malloc (sizeof (tnodeArenaBlock));
+    b->next     = NULL;
+    b->used     = 0;
+    b->capacity = capacity;
+    b->nodes    = (struct tnode*)malloc (capacity * sizeof (struct tnode));
+    return b;
+}
+
+// Activates the arena: make_leaf() allocates from it until tnodeArenaEnd().
+// Safe to call repeatedly (e.g. once per hand) -- reuses the same blocks
+// every time rather than growing without bound, by resetting `used` back
+// to 0 on each one instead of freeing/reallocating.
+void
+tnodeArenaBegin (void)
+{
+    if (g_arenaBlocks == NULL)
+        g_arenaBlocks = tnodeArenaNewBlock (ARENA_BLOCK_NODES);
+    for (tnodeArenaBlock* b = g_arenaBlocks; b != NULL; b = b->next)
+        b->used = 0;
+    g_arenaCurrent = g_arenaBlocks;
+}
+
+// Deactivates the arena -- make_leaf() falls back to malloc() again. Does
+// NOT free the blocks (kept around for the next tnodeArenaBegin() to
+// reuse); the nodes handed out during this generation stay valid data
+// until that next call resets `used` and starts overwriting them, which is
+// safe because nothing outlives the hand that built it (see above).
+void
+tnodeArenaEnd (void)
+{
+    g_arenaCurrent = NULL;
+}
+
+static inline TPTR
+tnodeArenaAlloc (void)
+{
+    if (g_arenaCurrent->used == g_arenaCurrent->capacity)   {
+        if (g_arenaCurrent->next == NULL)
+            g_arenaCurrent->next = tnodeArenaNewBlock (ARENA_BLOCK_NODES);
+        g_arenaCurrent = g_arenaCurrent->next;
+    }
+    return &g_arenaCurrent->nodes[g_arenaCurrent->used++];
+}
 
 static const char* typeNames[] = {
     "TINT",
@@ -58,7 +143,7 @@ make_leaf (enum nodeType type, long long val)
 	TPTR leaf;
 
 	logDebug ("make_leaf: type %d, val %llx\n", type, val);
-	leaf = (TPTR)malloc (sizeof (struct tnode));
+	leaf = (g_arenaCurrent != NULL) ? tnodeArenaAlloc () : (TPTR)malloc (sizeof (struct tnode));
 	leaf->t_type = type;
 	leaf->t_val  = val;
 	leaf->t_left = leaf->t_right = (TPTR)0;	/* No children yet */
@@ -128,9 +213,35 @@ find_def_node (void* defp, const char* name)
     return (nameIt != names.end()) ? (void*)nameIt->second : NULL;
 }
 
+// $ANY is a language-level built-in meaning "always true" (see
+// hand-spec.md), resolved here -- rather than via the normal per-file
+// defIndex lookup below -- so it works everywhere a name can be
+// referenced, not just after a file is fully loaded: a rule body written
+// as "$X := $Any AND (Spades >= 4);" resolves this during parsing, via
+// this same function (see bridge.y's DEFNAME-as-expression production),
+// before defroot may even be set yet (e.g. if $Any is referenced by the
+// very first definition in the file). Works regardless of whether the
+// file defines $ANY/$Any/$any itself -- any such definition is simply
+// never consulted, here or anywhere else, since every caller reaches
+// this name through find_rule(), never find_def_node() directly.
+//
+// One process-wide node, never mutated in place: find_def_node() (used by
+// ":&"/":|" to modify a node's t_right) is deliberately left untouched by
+// this special case, so "$ANY :& expr" still requires (and modifies) a
+// definition the file wrote itself -- it can never reach and corrupt the
+// shared node returned here.
+static TPTR
+builtinAnyNode ()
+{
+    static TPTR node = make_leaf (TINT, 1);
+    return node;
+}
+
 void*
 find_rule (void* defp, const char* name)
 {
+    if ((name != NULL) && (strcmp (name, "$ANY") == 0))
+        return builtinAnyNode ();
     TPTR nodep = (TPTR)find_def_node (defp, name);
     return nodep ? nodep->t_right : NULL;
 }
@@ -145,18 +256,39 @@ index_def (const char* name, void* node)
     defIndex[defroot][name] = (TPTR)node;
 }
 
+// NULL is the codebase-wide convention for "no rule" / "no constraint" /
+// true (see checkHand(NULL)) -- but only where something explicitly checks
+// for it. add_leaves() does not: a NULL child left embedded in a TAND/TOR
+// node is not "true" to the generic tree walker, it's just an absent
+// child, and traverse_lrt()/eval_node() do not agree on what that means
+// (a NULL t_left silently reads as false under TAND, but crashes under
+// TOR -- see write_node(), whose TAND/TOR cases dereference both sides'
+// t_desc unconditionally). So NULL is resolved to its true meaning HERE,
+// at the one place rules actually get combined, before it can ever become
+// a node's child -- not by trying to make traverse_lrt()/eval_node()
+// tolerate a NULL child in general, which would mean deciding a sensible
+// default for every other operator (TPLUS, TGEQ, ...) too, for cases that
+// structurally can't occur if this function is the sole entry point.
 void*
 combineRule (void* l, void* r)
 {
+    if (l == NULL) return r;
+    if (r == NULL) return l;
     TPTR parent = make_leaf (TAND, TAND);
-    return add_leaves (parent, (TPTR)l, (TPTR)r);
+    TPTR combined = add_leaves (parent, (TPTR)l, (TPTR)r);
+    return simplifyRule (combined);   // see simplify.hpp
 }
 
 // Same construction the parser uses for "NOT expr"/"!expr" (see bridge.y) --
 // negateRule just builds that node programmatically instead of parsing it.
+// NOT(NULL) = NOT(true) = always false, but NULL itself can't represent
+// "false" anywhere (it already means "true" -- see combineRule() above),
+// so this returns a real leaf rather than propagating NULL through.
 void*
 negateRule (void* r)
 {
+    if (r == NULL)
+        return make_leaf (TINT, 0);
     TPTR parent = make_leaf (TNOT, TNOT);
     return add_leaves (parent, (TPTR)0, (TPTR)r);
 }

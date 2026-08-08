@@ -9,6 +9,9 @@
 #include <time.h>
 #include <sys/time.h>
 #include <assert.h>
+#include <vector>
+#include <unordered_set>
+#include <string>
 #include "tnode.h"
 #include "consts.h"
 #include "pack.hpp"
@@ -40,6 +43,8 @@ static void upcase_str (char* s) { for (; *s; s++) *s = toupper((unsigned char)*
 
 static bool rulesOnlyMode = false;   // --rules-only: stop at the first unmatched rule, no simulation/guessing
 static bool validateMode  = false;   // --validate: check a system's rule tree for overlaps/gaps/dead rules, don't deal
+static bool selfTestMode  = false;   // --self-test: check combineRule()/negateRule()'s own NULL handling, no rules file needed
+static bool statsMode     = false;   // --stats: print runtime (dynamic) stats gathered during a normal run -- static/structural stats print unconditionally with --validate instead
 
 class funcStats {
     char    name[MAXNAMELEN];
@@ -235,7 +240,7 @@ findMatchingChild (convention* node, convention* rootSysp, bool allPassSoFar, ha
             continue;
         if (hand.checkHand (rule))
             return { s, acc };
-        acc = (acc == NULL) ? negateRule (rule) : combineRule (acc, negateRule (rule));
+        acc = combineRule (acc, negateRule (rule));
     }
     if (allPassSoFar && (node != rootSysp))    {
         for (convention* s = rootSysp->firstChild (); s != NULL; s = s->nextSibling ()) {
@@ -244,7 +249,7 @@ findMatchingChild (convention* node, convention* rootSysp, bool allPassSoFar, ha
                 continue;
             if (hand.checkHand (rule))
                 return { s, acc };
-            acc = (acc == NULL) ? negateRule (rule) : combineRule (acc, negateRule (rule));
+            acc = combineRule (acc, negateRule (rule));
         }
     }
     return { NULL, acc };
@@ -304,7 +309,28 @@ class biddingSystem : public convention
     bool isValid()                  { return (ruleList != NULL); }
     void* findRule (const char* ruleName) { return find_rule (ruleList, ruleName); }
     void processRule (void* rule);
+    int  countHandPropertyRules ();
 };
+
+// Hand-property ("$Name := ...", not "$.<bid>...") rules -- e.g. $balanced,
+// $ntop -- aren't part of the convention tree at all (processRule() skips
+// them), so they need their own pass over the flat definition list rather
+// than falling out of walkValidate()'s tree walk. Deduplicated by name so a
+// redefined rule (see hand-spec.md's "Redefinition") counts once, matching
+// what's actually live, not how many "$Name := ..." occurrences are in the
+// file.
+int
+biddingSystem::countHandPropertyRules ()
+{
+    std::unordered_set<std::string> names;
+    for (void* rule = ruleList; rule != NULL; rule = next_rule (rule))    {
+        char* nm = rule_name (rule);
+        if ((nm[0] == '$') && (nm[1] == '.'))
+            continue;   // bid-sequence rule -- counted by walkValidate() instead
+        names.insert (nm);
+    }
+    return (int)names.size ();
+}
 
 biddingSystem::biddingSystem (char* fileName)
     : convention (NULL, bidInvalid, NULL)
@@ -422,6 +448,16 @@ static constexpr bidName bidNames[] = { "ER", "ER", "ER", "ER", "P",
                                     "6C", "6D", "6H", "6S", "6N",
                                     "7C", "7D", "7H", "7S", "7N" };
 
+// Rule-coverage tracking for --stats: matchedByRound[sysIndex][round] / same
+// shape for guessedByRound, round 1 = opening bid (same numbering as
+// validateSystem()'s bidsByDepth). Gathered unconditionally -- the
+// bookkeeping is a few integer increments per bid, negligible next to a
+// DDS solve -- only the printing is gated on statsMode. Declared ahead of
+// auction::nextBid() (which populates it) and printRuleCoverageTable()
+// (which reports it, much further down).
+static std::vector<std::vector<int>> matchedByRound;
+static std::vector<std::vector<int>> guessedByRound;
+
 class auction  {
     aHand       hands[NHANDS];
     void*       rules[NHANDS];
@@ -434,6 +470,8 @@ class auction  {
     bool        allPassSoFar;  // True until the first non-Pass call of this auction
     char        guessPointBidStr[MAXNAMELEN];  // auction so far, at the point suggestContract() would be called
     bool        guessWasCalled;    // true once we've reached the "no matching rule" branch
+    int         roundNum;          // for --stats: which bid nextBid() is deciding, 1 = opening bid
+    int         curSysIndex;       // for --stats: which system this bidHand() call is for
     int         whoseTurn;
     handScores  totScores;
     bid         maxBid;
@@ -506,6 +544,7 @@ auction::initializeBidding ()
     allPassSoFar = true;
     guessWasCalled = false;
     *guessPointBidStr = 0;
+    roundNum = 0;
 }
 
 void
@@ -514,6 +553,7 @@ auction::bidHand (systemp sp, int sysIndex)
     initializeBidding ();
     sysp = sp;
     rootSysp = sp;
+    curSysIndex = sysIndex;
     rules[bidder] = rules[nextBidder()] = sp->findRule ("$ANY");   // reset to no info
 
     while (nextBid ())
@@ -529,9 +569,21 @@ auction::nextBid ()
     if (sysp == NULL)
         bidVal = considerOverride ();
     else    {
+        roundNum++;
         matchResult mr = findMatchingChild (sysp, rootSysp, allPassSoFar, hands[bidder], rules[bidder]);
         convention* s = mr.match;
+        // Rule-coverage bookkeeping for --stats (see printRuleCoverageTable()):
+        // grow this system's per-round vector as needed, then tally which
+        // branch below decided this bid -- rule match or suggestContract()
+        // guess. Always gathered; only the report is gated on statsMode.
+        std::vector<int>& matched = matchedByRound[curSysIndex];
+        std::vector<int>& guessed = guessedByRound[curSysIndex];
+        if ((size_t)roundNum >= matched.size ())   {
+            matched.resize (roundNum + 1, 0);
+            guessed.resize (roundNum + 1, 0);
+        }
         if (s == NULL)  {   // No matching rule found. Take a guess at best contract
+            guessed[roundNum]++;
             guessWasCalled = true;
             snprintf (guessPointBidStr, sizeof (guessPointBidStr), "%s", bidStr);
             {
@@ -554,6 +606,7 @@ auction::nextBid ()
             nextBidp += ((bidVal == bidPass) ? 5 : 6);
             return false;
         } else    {   // Found matching rule
+            matched[roundNum]++;
             bidVal = s->thisBid ();
             rules[bidder] = combineRule (mr.acc, s->getRule());
         }
@@ -680,6 +733,144 @@ auction::writeSummary (systemNamep* systemNames)
         logInfo ("System %s: average IMPs vs par = %.2f, bid par contract %d/%d (%.1f%%)\n",
                 *snpp, avgImps, parMatches[sysIndex], boardsScored, parPct);
     }
+}
+
+// Round names for the first few bid-sequence depths (1 = opening bid).
+// Shared between printStatsTable()'s static bidsByDepth report and
+// printRuleCoverageTable()'s dynamic one below, so the two use identical
+// round labels. Beyond NAMED_ROUNDS, printStatsTable() lumps everything
+// into one "Round N+" bucket (rare enough not to name individually), but
+// printRuleCoverageTable() prints each deeper round on its own row instead
+// -- see the comment there for why.
+static const char* const roundNames[] = {
+    NULL,                              // depth 0: root, not a real round
+    "Opening bids (North)",            // depth 1
+    "Responses (South)",               // depth 2
+    "Opener's rebid (North)",          // depth 3
+    "Responder's rebid (South)",       // depth 4
+    "Opener's 2nd rebid (North)",      // depth 5
+    "Responder's 2nd rebid (South)",   // depth 6
+};
+enum { NAMED_ROUNDS = 6 };
+
+struct TableRow {
+    std::string label;
+    std::vector<std::string> values;   // pre-formatted, one per system, same order as systemNames
+};
+
+// Shared by printStatsTable() (--validate's static structure/summary) and
+// printRuleCoverageTable() (--stats's dynamic rule coverage): one row per
+// stat, one column per system, column width derived from each system's
+// name and its widest formatted value in that column.
+static void
+printTable (const char* title, systemNamep* systemNames, int n, const std::vector<TableRow>& rows)
+{
+    size_t labelWidth = 0;
+    for (const TableRow& r : rows)
+        if (r.label.size () > labelWidth)
+            labelWidth = r.label.size ();
+
+    std::vector<size_t> colWidth (n);
+    for (int s = 0; s < n; s++)   {
+        colWidth[s] = strlen (systemNames[s]);
+        for (const TableRow& r : rows)
+            if (r.values[s].size () > colWidth[s])
+                colWidth[s] = r.values[s].size ();
+    }
+
+    std::string line (labelWidth, ' ');
+    for (int s = 0; s < n; s++)   {
+        char buf[LINE_LENGTH];
+        snprintf (buf, sizeof (buf), "  %*s", (int)colWidth[s], systemNames[s]);
+        line += buf;
+    }
+    logInfo ("%s\n", title);
+    logInfo ("%s\n", line.c_str ());
+
+    for (const TableRow& r : rows)   {
+        char labelBuf[LINE_LENGTH];
+        snprintf (labelBuf, sizeof (labelBuf), "%-*s", (int)labelWidth, r.label.c_str ());
+        line = labelBuf;
+        for (int s = 0; s < n; s++)   {
+            char buf[LINE_LENGTH];
+            snprintf (buf, sizeof (buf), "  %*s", (int)colWidth[s], r.values[s].c_str ());
+            line += buf;
+        }
+        logInfo ("%s\n", line.c_str ());
+    }
+}
+
+static std::string
+fmtLL (long long v)
+{
+    char buf[32];
+    snprintf (buf, sizeof (buf), "%lld", v);
+    return buf;
+}
+
+static std::string
+fmtCoverage (int matched, int total)
+{
+    if (total == 0)
+        return "-";   // this round was never reached at all for this system
+    char buf[64];
+    snprintf (buf, sizeof (buf), "%d/%d (%.1f%%)", matched, total, 100.0 * matched / total);
+    return buf;
+}
+
+// --stats: rule coverage in practice -- how often nextBid() found a
+// matching rule vs. had to fall through to suggestContract()'s guess,
+// broken down by round with the same labels validateSystem() uses for its
+// static bidsByDepth report. This is the real, empirical counterpart to
+// that report's GAP percentage (a sampling-based prediction of the same
+// thing) -- ground truth from the deals actually processed, vs. an
+// estimate from 3000 random hands per decision point. One column per
+// system, like printStatsTable() -- but unlike that table, rounds beyond
+// NAMED_ROUNDS are NOT lumped into a single "Round 7+" bucket here: losing
+// which specific deep round is under-covered would defeat the point of a
+// per-round diagnostic.
+static void
+printRuleCoverageTable (systemNamep* systemNames)
+{
+    int n = numSystems;
+    size_t maxRounds = 0;
+    for (int s = 0; s < n; s++)
+        if (matchedByRound[s].size () > maxRounds)
+            maxRounds = matchedByRound[s].size ();
+
+    std::vector<TableRow> rows;
+    std::vector<long long> totalMatched (n, 0), totalAll (n, 0);
+    for (size_t d = 1; d < maxRounds; d++)   {
+        TableRow row;
+        char label[MAXNAMELEN];
+        if (d <= NAMED_ROUNDS)
+            snprintf (label, sizeof (label), "%s", roundNames[d]);
+        else
+            snprintf (label, sizeof (label), "Round %zu (%s)", d, (d % 2) ? "North" : "South");
+        row.label = label;
+        row.values.resize (n);
+        bool anyReached = false;
+        for (int s = 0; s < n; s++)   {
+            int m = ((size_t)d < matchedByRound[s].size ()) ? matchedByRound[s][d] : 0;
+            int g = ((size_t)d < guessedByRound[s].size ()) ? guessedByRound[s][d] : 0;
+            row.values[s] = fmtCoverage (m, m + g);
+            if ((m + g) > 0)
+                anyReached = true;
+            totalMatched[s] += m;
+            totalAll[s] += (m + g);
+        }
+        if (anyReached)
+            rows.push_back (row);
+    }
+
+    TableRow overallRow;
+    overallRow.label = "Overall";
+    overallRow.values.resize (n);
+    for (int s = 0; s < n; s++)
+        overallRow.values[s] = fmtCoverage ((int)totalMatched[s], (int)totalAll[s]);
+    rows.push_back (overallRow);
+
+    printTable ("System rule coverage (--stats):", systemNames, n, rows);
 }
 
 static int trumpFilter[DDS_STRAINS] = {0, 0, 0, 0, 0}; // North by default
@@ -884,6 +1075,14 @@ struct validateStats {
     int gaps;
     int unreachable;
     int duplicates;
+    // Structural/size stats -- always printed with --validate, no flag.
+    // bidsByDepth[d] = number of "$."-sequence rules defined at depth d
+    // (1 = opening bid, 2 = response, ...); index 0 unused. Grown lazily
+    // as walkValidate() encounters deeper nodes.
+    std::vector<int> bidsByDepth;
+    int waypoints;   // depth>0 nodes with no rule of their own (pure path prefixes)
+    int maxDepth;    // deepest node visited, whether or not it has a rule
+    int handPropertyRules;   // set separately, after the walk -- see validateSystem()
 };
 
 static void
@@ -981,22 +1180,6 @@ checkDecisionPoint (convention* node, convention* rootSysp, bool allPassSoFar,
     return true;
 }
 
-// combineRule() itself assumes both operands are non-NULL (write_node()'s
-// TAND case dereferences both sides' t_desc unconditionally) -- safe in the
-// live auction because rules[bidder] is seeded from $ANY, which every rules
-// file is expected to define. --validate can't rely on that convention, so
-// treat a NULL side as "no constraint" (matching checkHand(NULL)'s own
-// semantics) instead of ever calling combineRule() with one.
-static void*
-combineRuleSafe (void* acc, void* rule)
-{
-    if (rule == NULL)
-        return acc;
-    if (acc == NULL)
-        return rule;
-    return combineRule (acc, rule);
-}
-
 static void
 walkValidate (convention* node, convention* rootSysp, int depth,
               void* northAcc, void* southAcc, bool allPassSoFar,
@@ -1011,12 +1194,24 @@ walkValidate (convention* node, convention* rootSysp, int depth,
         // itself matched against a hand. Unlike the live auction (which
         // only ever combines in a *matched* child's rule -- see
         // findMatchingChild()), this walk visits every node structurally,
-        // so combineRuleSafe() (rather than combineRule() directly) treats
-        // a NULL rule here as "no additional constraint".
+        // so a NULL rule here (a waypoint) is common, not exceptional --
+        // combineRule() itself now treats NULL as "no additional
+        // constraint" on either side, so this needs no special handling.
         if (depth % 2 == 1)   // odd depth: North's own bid/rule
-            northAcc = combineRuleSafe (northAcc, node->getRule ());
+            northAcc = combineRule (northAcc, node->getRule ());
         else                  // even depth: South's own bid/rule
-            southAcc = combineRuleSafe (southAcc, node->getRule ());
+            southAcc = combineRule (southAcc, node->getRule ());
+
+        // Structural/size bookkeeping -- always gathered, printed
+        // unconditionally by validateSystem() (no separate flag).
+        if (depth > stats->maxDepth)
+            stats->maxDepth = depth;
+        if (node->getRule () != NULL)   {
+            if ((size_t)depth >= stats->bidsByDepth.size ())
+                stats->bidsByDepth.resize (depth + 1, 0);
+            stats->bidsByDepth[depth]++;
+        } else
+            stats->waypoints++;
     }
     if (node->firstChild () == NULL)
         return;   // leaf -- nothing to validate below it
@@ -1042,19 +1237,105 @@ walkValidate (convention* node, convention* rootSysp, int depth,
         walkValidate (c, rootSysp, depth + 1, childNorthAcc, childSouthAcc, allPassSoFar, childPath, stats);
         void* rule = c->getRule ();
         if (rule != NULL)
-            siblingAcc = combineRuleSafe (siblingAcc, negateRule (rule));
+            siblingAcc = combineRule (siblingAcc, negateRule (rule));
     }
 }
 
-static void
+// Runs the offline tree walk for one system, logging findings (OVERLAP/GAP/
+// UNREACHABLE/DUPLICATE) as they're found -- those are inherently per-
+// decision-point messages, not single numbers, so they don't fit into the
+// cross-system comparison table printStatsTable() prints afterward. The
+// structural/summary numbers this used to print inline are returned
+// instead, so main() can collect all systems' stats before laying out that
+// table -- one column per system, printed only once every system in this
+// -i list has been walked.
+static validateStats
 validateSystem (biddingSystem* sys, const char* sysName)
 {
-    validateStats stats = { 0, 0, 0, 0, 0 };
+    validateStats stats = {};
     void* anyRule = sys->findRule ("$ANY");   // mirrors bidHand()'s initial rules[bidder] reset
     logInfo ("Validating system %s...\n", sysName);
     walkValidate (sys, sys, 0, anyRule, anyRule, true, "", &stats);
-    logInfo ("System %s: %d decision point(s), %d overlap, %d gap, %d unreachable, %d duplicate-text\n",
-             sysName, stats.decisionPoints, stats.overlaps, stats.gaps, stats.unreachable, stats.duplicates);
+    stats.handPropertyRules = sys->countHandPropertyRules ();
+    return stats;
+}
+
+// One row per stat, one column per system -- the structural/size numbers
+// validateSystem() used to print inline per system, laid out for
+// side-by-side comparison across every -i system instead. A named-round
+// row is included only if at least one system actually has bids at that
+// depth, matching the old inline behavior of skipping all-zero rows.
+static void
+printStatsTable (systemNamep* systemNames, const std::vector<validateStats>& allStats)
+{
+    int n = (int)allStats.size ();
+    std::vector<TableRow> rows;
+
+    for (int d = 1; d <= NAMED_ROUNDS; d++)   {
+        std::vector<long long> raw (n, 0);
+        bool anyNonzero = false;
+        for (int s = 0; s < n; s++)   {
+            if ((size_t)d < allStats[s].bidsByDepth.size ())
+                raw[s] = allStats[s].bidsByDepth[d];
+            if (raw[s] != 0)
+                anyNonzero = true;
+        }
+        if (anyNonzero)   {
+            TableRow row;
+            row.label = roundNames[d];
+            for (int s = 0; s < n; s++)
+                row.values.push_back (fmtLL (raw[s]));
+            rows.push_back (row);
+        }
+    }
+
+    {
+        std::vector<long long> raw (n, 0);
+        bool anyOverflow = false;
+        for (int s = 0; s < n; s++)   {
+            for (size_t d = NAMED_ROUNDS + 1; d < allStats[s].bidsByDepth.size (); d++)
+                raw[s] += allStats[s].bidsByDepth[d];
+            if (raw[s] != 0)
+                anyOverflow = true;
+        }
+        if (anyOverflow)   {
+            TableRow row;
+            row.label = "Round 7+ (North/South)";
+            for (int s = 0; s < n; s++)
+                row.values.push_back (fmtLL (raw[s]));
+            rows.push_back (row);
+        }
+    }
+
+    TableRow totalRow;
+    totalRow.label = "Total bid-sequence rules";
+    for (int s = 0; s < n; s++)   {
+        long long total = 0;
+        for (size_t d = 1; d < allStats[s].bidsByDepth.size (); d++)
+            total += allStats[s].bidsByDepth[d];
+        totalRow.values.push_back (fmtLL (total));
+    }
+    rows.push_back (totalRow);
+
+    struct { const char* label; int validateStats::*field; } simpleFields[] = {
+        { "Hand-property rules", &validateStats::handPropertyRules },
+        { "Pure path waypoints", &validateStats::waypoints },
+        { "Max auction depth",   &validateStats::maxDepth },
+        { "Decision points",     &validateStats::decisionPoints },
+        { "Overlap",             &validateStats::overlaps },
+        { "Gap",                 &validateStats::gaps },
+        { "Unreachable",         &validateStats::unreachable },
+        { "Duplicate-text",      &validateStats::duplicates },
+    };
+    for (auto& f : simpleFields)   {
+        TableRow row;
+        row.label = f.label;
+        for (int s = 0; s < n; s++)
+            row.values.push_back (fmtLL (allStats[s].*(f.field)));
+        rows.push_back (row);
+    }
+
+    printTable ("System structure & validation summary:", systemNames, n, rows);
 }
 
 static char inFileList[PATH_MAX];
@@ -1062,6 +1343,169 @@ static char path[PATH_MAX];
 static char output[PATH_MAX];
 static char pbnFile[PATH_MAX];
 static char detailFile[PATH_MAX];
+
+// --self-test: exercises combineRule()/negateRule()'s NULL handling
+// directly. Needed because, with $ANY now always defined (see read_rules()),
+// there's no longer any live code path that actually calls these with a
+// NULL operand -- the load-bearing behavior would otherwise go completely
+// unexercised by every other test in the suite. No rules file, no dealing.
+static bool
+runSelfTest ()
+{
+    bool ok = true;
+    void* realRule = make_leaf (TINT, 1);   // stand-in for "some real rule"
+    aHand dummyHand;                        // never dealt; TINT leaves don't look at it
+
+    if (combineRule (NULL, realRule) != realRule)    {
+        logError ("[self-test] FAILED: combineRule(NULL, r) should return r unchanged\n");
+        ok = false;
+    }
+    if (combineRule (realRule, NULL) != realRule)    {
+        logError ("[self-test] FAILED: combineRule(r, NULL) should return r unchanged\n");
+        ok = false;
+    }
+    if (combineRule (NULL, NULL) != NULL)    {
+        logError ("[self-test] FAILED: combineRule(NULL, NULL) should return NULL\n");
+        ok = false;
+    }
+    void* alwaysFalse = negateRule (NULL);
+    if (alwaysFalse == NULL)    {
+        logError ("[self-test] FAILED: negateRule(NULL) should return a real leaf, not NULL\n");
+        ok = false;
+    } else if (dummyHand.checkHand (alwaysFalse) != false)    {
+        logError ("[self-test] FAILED: negateRule(NULL) should evaluate to false (NOT(true))\n");
+        ok = false;
+    }
+    if (dummyHand.checkHand (combineRule (NULL, alwaysFalse)) != false)    {
+        logError ("[self-test] FAILED: combineRule(NULL, negateRule(NULL)) should evaluate to false\n");
+        ok = false;
+    }
+
+    if (ok)
+        logInfo ("[self-test] PASSED\n");
+    return ok;
+}
+
+// ---- simplify() checks, exercised via --self-test ----
+//
+// Built directly with make_leaf()/match_string() rather than parsed from a
+// rules file, matching --self-test's existing "no rules file needed"
+// design. Every tree is combined with a filler TINT(1) via combineRule()
+// (rather than calling simplifyRule() directly), so this exercises the
+// exact same path production code goes through -- combineRule() is the
+// sole hook (see tnode.cpp) -- not a separate, possibly-diverging entry
+// point. TINT(1) is the AND identity element, so it never affects the
+// result (see simplifyAnd()'s isTrueLeaf() filtering) -- it exists only so
+// both operands are non-NULL, since combineRule(NULL, x) short-circuits to
+// x unchanged without invoking simplify at all.
+//
+// Two things worth knowing about the exact expected strings below (see
+// hand-spec.md's "Rule Simplification"): TGT/TLT are always canonicalized
+// to TGEQ/TLEQ with an adjusted boundary (Points > 14 -> Points >= 15),
+// even when nothing else about the clause changes -- so "unchanged" only
+// ever means structurally/semantically unchanged, never guaranteed
+// byte-identical to the input. And rebuilt AND/OR operand order follows
+// unordered_map iteration order, not input source order -- both confirmed
+// against this build's actual output before being written as expected
+// strings here, not hand-derived and assumed correct.
+static TPTR
+atom (const char* name)
+{
+    char buf[64];
+    snprintf (buf, sizeof (buf), "%s", name);
+    return match_string (buf);
+}
+static TPTR
+cmp (nodeType t, TPTR left, long long val)
+{
+    TPTR p = make_leaf (t, t);
+    return add_leaves (p, left, make_leaf (TINT, val));
+}
+static TPTR
+band (TPTR l, TPTR r) { TPTR p = make_leaf (TAND, TAND); return add_leaves (p, l, r); }
+static TPTR
+bor (TPTR l, TPTR r) { TPTR p = make_leaf (TOR, TOR); return add_leaves (p, l, r); }
+
+static bool
+checkSimplify (const char* label, void* result, const char* expected, bool* ok)
+{
+    const char* got = result ? ((TPTR)result)->t_desc : "(NULL)";
+    if (strcmp (got, expected) != 0)   {
+        logError ("[self-test] FAILED: simplify %s: expected \"%s\", got \"%s\"\n", label, expected, got);
+        *ok = false;
+        return false;
+    }
+    return true;
+}
+
+static bool
+runSimplifyTests ()
+{
+    bool ok = true;
+    TPTR one = make_leaf (TINT, 1);   // AND-identity filler; see comment above
+
+    // (10 TO 18 Points) AND (Points > 15) -> the two upper/lower bounds on
+    // Points merge into one tightened range.
+    TPTR ex1 = band (band (cmp (TGEQ, atom ("POINTS"), 10), cmp (TLEQ, atom ("POINTS"), 18)),
+                      cmp (TGT, atom ("POINTS"), 15));
+    checkSimplify ("ex1 (interval merge)", combineRule (one, ex1),
+                   "((POINTS >= 16) && (POINTS <= 18))", &ok);
+
+    // (10 TO 18 Points) AND (((Points > 14) AND (Spades ?= 4)) OR (Spades > 4))
+    // -- Points>14 is NOT fully implied by 10 TO 18 alone (a 12-point hand
+    // satisfies the outer range but not this clause), so nothing is
+    // dropped; this is the "sound no-op" case (mod GT->GEQ).
+    TPTR ex2branch1 = band (cmp (TGT, atom ("POINTS"), 14), cmp (TEQU, atom ("SPADES"), 4));
+    TPTR ex2branch2 = cmp (TGT, atom ("SPADES"), 4);
+    TPTR ex2 = band (band (cmp (TGEQ, atom ("POINTS"), 10), cmp (TLEQ, atom ("POINTS"), 18)),
+                      bor (ex2branch1, ex2branch2));
+    checkSimplify ("ex2 (OR branch not redundant)", combineRule (one, ex2),
+                   "(((POINTS >= 10) && (POINTS <= 18)) && (((SPADES ?= 4) && (POINTS >= 15)) || (SPADES >= 5)))", &ok);
+
+    // Same shape, but Points>5 IS fully implied by 10 TO 18 Points (context
+    // already guarantees >=10) -- that clause is dropped from the branch.
+    TPTR ex3branch1 = band (cmp (TGT, atom ("POINTS"), 5), cmp (TEQU, atom ("SPADES"), 4));
+    TPTR ex3branch2 = cmp (TGT, atom ("SPADES"), 4);
+    TPTR ex3 = band (band (cmp (TGEQ, atom ("POINTS"), 10), cmp (TLEQ, atom ("POINTS"), 18)),
+                      bor (ex3branch1, ex3branch2));
+    checkSimplify ("ex3 (OR branch redundant clause dropped)", combineRule (one, ex3),
+                   "(((POINTS >= 10) && (POINTS <= 18)) && ((SPADES ?= 4) || (SPADES >= 5)))", &ok);
+
+    // NOT(Hearts >= 4) -- as negateRule() produces it, a raw TNOT -- folds
+    // to a directly-usable Hearts < 4 via De Morgan/comparison negation.
+    TPTR ex4 = band (cmp (TGEQ, atom ("SPADES"), 4), (TPTR)negateRule (cmp (TGEQ, atom ("HEARTS"), 4)));
+    checkSimplify ("ex4 (NOT-pushdown on negateRule() output)", combineRule (one, ex4),
+                   "((SPADES >= 4) && (HEARTS <= 3))", &ok);
+
+    // Hearts < 4 AND Hearts >= 4 -- a real contradiction, caught exactly
+    // (empty interval), not just approximated by sampling like --validate's
+    // UNREACHABLE does. Must come back non-NULL (NULL means "always true"
+    // everywhere else in this codebase, so "always false" needs a real leaf).
+    TPTR ex5 = band ((TPTR)negateRule (cmp (TGEQ, atom ("HEARTS"), 4)), cmp (TGEQ, atom ("HEARTS"), 4));
+    void* ex5r = combineRule (one, ex5);
+    if (ex5r == NULL)   {
+        logError ("[self-test] FAILED: simplify ex5 (contradiction): expected a real false-leaf, got NULL\n");
+        ok = false;
+    } else
+        checkSimplify ("ex5 (contradiction)", ex5r, "0", &ok);
+
+    // (Sl >= 4) AND (Slen <= 6) -- Sl/Slen are two spellings of the same
+    // underlying function (suit_len); should fold into one range despite
+    // never sharing exact keyword text.
+    TPTR ex6 = band (cmp (TGEQ, atom ("SL"), 4), cmp (TLEQ, atom ("SLEN"), 6));
+    checkSimplify ("ex6 (Sl/Slen alias collapsing)", combineRule (one, ex6),
+                   "((SL >= 4) && (SL <= 6))", &ok);
+
+    // (NLTC <= 16) AND (NLTC >= 10) -- NLTC is just another TKWORD entry;
+    // needs zero special-casing to fold the same way Points does.
+    TPTR ex7 = band (cmp (TLEQ, atom ("NLTC"), 16), cmp (TGEQ, atom ("NLTC"), 10));
+    checkSimplify ("ex7 (NLTC, no special-casing)", combineRule (one, ex7),
+                   "((NLTC >= 10) && (NLTC <= 16))", &ok);
+
+    if (ok)
+        logInfo ("[self-test] simplify checks PASSED\n");
+    return ok;
+}
 
 int
 main (int argc, char** argv)
@@ -1090,6 +1534,16 @@ main (int argc, char** argv)
         }
         if (strcmp (argv[i], "--validate") == 0)    {
             validateMode = true;
+            i += 1;
+            continue;
+        }
+        if (strcmp (argv[i], "--self-test") == 0)    {
+            selfTestMode = true;
+            i += 1;
+            continue;
+        }
+        if (strcmp (argv[i], "--stats") == 0)    {
+            statsMode = true;
             i += 1;
             continue;
         }
@@ -1164,6 +1618,11 @@ main (int argc, char** argv)
             continue;
         }
     }
+    if (selfTestMode)   {
+        bool ok = runSelfTest ();
+        ok = runSimplifyTests () && ok;
+        return ok ? 0 : 1;
+    }
     if (chdir (path) != 0)  {
         logError ("failed to change directory to %s\n", path);
         perror ("chdir");
@@ -1228,13 +1687,17 @@ main (int argc, char** argv)
     assert (s == (systemsList + numSystems));
 
     if (validateMode)   {
+        std::vector<validateStats> allStats;
         for (int vi = 0; vi < numSystems; vi++)
-            validateSystem (systemsList[vi], systemNames[vi]);
+            allStats.push_back (validateSystem (systemsList[vi], systemNames[vi]));
+        printStatsTable (systemNames, allStats);
         return 0;
     }
 
     impSum = new int[numSystems]();
     parMatches = new int[numSystems]();
+    matchedByRound.resize (numSystems);
+    guessedByRound.resize (numSystems);
 
     if (partnerRuleName) {
         char prBuf[MAXNAMELEN];
@@ -1289,11 +1752,20 @@ main (int argc, char** argv)
                 fflush (detailh);
                 fprintf (detailh, "Processing deal %d,,%d\n", repsDone, randCalls);
             }
+            // Bracket one hand's worth of accumulator-building (all
+            // numSystems bid the same deal) so make_leaf() allocates from
+            // the transient-node arena instead of malloc() -- see
+            // tnode.cpp's "Transient-node arena" comment. Safe: bidHand()
+            // resets rules[bidder] to a fresh $ANY lookup at the start of
+            // each system's turn (see its "reset to no info" comment), and
+            // nothing built here is read after this rep ends.
+            tnodeArenaBegin ();
             auction a (rulep);
             (void)a.createDeal (NULL);
             boardsScored++;
             for (snum = 0; snum < numSystems; snum++)
                 a.bidHand (systemsList[snum], snum);
+            tnodeArenaEnd ();
             t1 = time (0) - t0;
             --reps;
             ++repsDone;
@@ -1310,11 +1782,13 @@ main (int argc, char** argv)
                 fflush (detailh);
                 fprintf (detailh, "Processing deal %d,,%d\n", repsDone, randCalls);
             }
+            tnodeArenaBegin ();   // see the non-PBN loop above for why this is safe
             auction a (rulep);
             if (a.createDeal (pbnDeal))   {
                 boardsScored++;
                 for (snum = 0; snum < numSystems; snum++)
                     a.bidHand (systemsList[snum], snum);
+                tnodeArenaEnd ();
                 t1 = time (0) - t0;
                 ++repsDone;
                 if ((repsDone % reportInterval) == 0)
@@ -1331,6 +1805,8 @@ main (int argc, char** argv)
     logInfo ("bidHand took %lld seconds\n", (long long)(time(0) - t0));
     if (!rulesOnlyMode)
         auction::writeSummary (systemNames);
+    if (statsMode)
+        printRuleCoverageTable (systemNames);
     funcStats::printAll ();
     fclose (oh);
     if (bboFp)

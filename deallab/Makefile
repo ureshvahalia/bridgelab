@@ -105,6 +105,7 @@ OBJS = \
     $(OBJ_DIR)/pack.o \
     $(OBJ_DIR)/rawScore.o \
     $(OBJ_DIR)/parse_rules.o \
+    $(OBJ_DIR)/simplify.o \
     $(OBJ_DIR)/tnode.o \
     $(OBJ_DIR)/translations.o
 

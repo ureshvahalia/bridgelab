@@ -299,6 +299,23 @@ match_string (char* s)
 	return NULL;
 }
 
+// Exposes kword_fn_list/suffix_fn_list function-pointer identity to
+// shared/simplify.cpp, so it can tell whether two differently-spelled
+// keywords (e.g. Points/tpts, Sl/Slen, Skcs/Skeycards) refer to the same
+// underlying quantity, without duplicating that alias table by hand --
+// both arrays are otherwise file-local (static) to this translation unit.
+void*
+kwordFnAt (int idx)
+{
+    return (void*)kword_fn_list[idx].f;
+}
+
+void*
+suffixFnAt (int idx)
+{
+    return (void*)suffix_fn_list[idx].f;
+}
+
 #define LRES	t_left->t_result
 #define RRES	t_right->t_result
 

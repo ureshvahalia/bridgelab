@@ -1,0 +1,459 @@
+## ============================================================
+## Camel Bidding System
+## Source: camel.pdf / camel.tex (Nov 25, 2025 version)
+##
+## This is a first-pass uncontested-system transcription for Bidder.
+## It focuses on the core opening structure and the main early
+## continuations that are explicitly described in the Camel notes.
+##
+## Some branches in the source are relay-heavy, judgement-based, or
+## explicitly left undefined/TBD. Those are approximated conservatively
+## here so that the system is parsable and usable by the program.
+## ============================================================
+
+## ---- Helpers ----
+
+$Any := Points >= 0 ;
+
+## Balanced / semi-balanced patterns used repeatedly in Camel
+$bal := shape [4,3,3,3] OR shape [4,4,3,2] OR shape [5,3,3,2] ;
+$semiBal := $bal OR shape [5,4,2,2] OR shape [6,3,2,2] OR shape [7,2,2,2] ;
+
+## Hands with no singleton/void and no 4-card major
+$ntShape := $semiBal AND Spades < 4 AND Hearts < 4 ;
+
+## Major-related helpers
+$bothMajors4 := Spades >= 4 AND Hearts >= 4 ;
+$bothMajors5 := Spades >= 5 AND Hearts >= 5 ;
+$noMajor4 := Spades < 4 AND Hearts < 4 ;
+$oneMajor4 := ($bothMajors4) OR ((Spades >= 4) AND Hearts < 4) OR ((Hearts >= 4) AND Spades < 4) ;
+$oneMajor45 := Spades >= 4 OR Hearts >= 4 ;
+$noLongMajor := Spades < 6 AND Hearts < 6 ;
+
+## Major-opening shape: unbalanced, or 6+ card suit
+$shapely := NOT $semiBal ;
+$heartOpenShape := (Hearts >= 6) OR $shapely ;
+$spadeOpenShape := (Spades >= 6) OR $shapely ;
+
+## 2M balanced openings
+$2Hhand := (11 TO 14 Points) AND $semiBal AND Hearts ?= 5 AND Spades < 4 ;
+$2Shand := (11 TO 14 Points) AND $semiBal AND Spades ?= 5 AND Hearts < 4 ;
+
+## 1NT opening
+$1Nhand := (11 TO 14 Points) AND $ntShape ;
+
+## Strong diamond opening: balanced 15-23 or unbalanced 14+, no 4-card major
+$1D_bal := (15 TO 23 Points) AND $semiBal AND $noMajor4 ;
+$1D_unbal := Points >= 14 AND NOT $semiBal AND $noMajor4 ;
+$1Dhand := $1D_bal OR $1D_unbal ;
+
+## Minor-oriented 2m openings
+$2Cshape := Hearts >= 5 AND ((Hearts >= 6) OR (Spades < 4 AND (Diamonds <= 1 OR Clubs <= 1))) ;
+$2Dshape := Spades >= 5 AND ((Spades >= 6) OR (Hearts < 4 AND (Diamonds <= 1 OR Clubs <= 1))) ;
+
+## Good long-major 2N opening: stronger playing-trick version of a 2m opener
+$2N_H := Hearts >= 7 AND (Hpts >= 7 OR (Ha AND Hk) OR (Ha AND Hq) OR (Hk AND Hq AND Hj)) ;
+$2N_S := Spades >= 7 AND (Spts >= 7 OR (Sa AND Sk) OR (Sa AND Sq) OR (Sk AND Sq AND Sj)) ;
+$2Nhand := (10 TO 16 Points) AND ($2N_H OR $2N_S) ;
+
+## 3NT opening: self-sufficient long suit with major tricks or extreme minor
+$solidHeartSuit := Hearts >= 7 AND ((Ha AND Hk AND Hq) OR (Ha AND Hk AND Hj) OR (Ha AND Hq AND Hj)) ;
+$solidSpadeSuit := Spades >= 7 AND ((Sa AND Sk AND Sq) OR (Sa AND Sk AND Sj) OR (Sa AND Sq AND Sj)) ;
+$solidDiamondSuit := Diamonds >= 7 AND ((Da AND Dk AND Dq) OR (Da AND Dk AND Dj) OR (Da AND Dq AND Dj)) ;
+$solidClubSuit := Clubs >= 7 AND ((Ca AND Ck AND Cq) OR (Ca AND Ck AND Cj) OR (Ca AND Cq AND Cj)) ;
+$3Nhand := (11 TO 16 Points) AND ($solidHeartSuit OR $solidSpadeSuit OR
+          (($solidDiamondSuit OR $solidClubSuit) AND NOT $bal)) ;
+
+## Natural preempts
+$3Cpre := (5 TO 10 Points) AND Clubs >= 6 ;
+$3Dpre := (5 TO 10 Points) AND Diamonds >= 6 ;
+$3Hpre := (5 TO 10 Points) AND Hearts >= 6 ;
+$3Spre := (5 TO 10 Points) AND Spades >= 6 ;
+
+## 1C opening: 11+ with a 4/5-card major, denying 6-card major.
+## Also includes the rare 24+ balanced hand with no major.
+$1C_major := Points >= 11 AND $oneMajor45 AND $noLongMajor AND NOT $1Dhand ;
+$1C_24bal := Points >= 24 AND $semiBal ;
+$1Chand := ($1C_major OR $1C_24bal) ;
+
+## 1H / 1S natural openings
+## 1H can be balanced 18-20 with 4/5 hearts and no 4 spades.
+$1H_bal := (18 TO 20 Points) AND $semiBal AND Hearts >= 4 AND Spades < 4 ;
+$1H_55 := Points >= 14 AND Hearts >= 5 AND Spades >= 5 ;
+$1H_shape := Points >= 14 AND Hearts >= 5 AND Spades < 5 AND $heartOpenShape ;
+$1Hhand := $1H_bal OR $1H_55 OR $1H_shape ;
+
+## 1S is 14+ shapely with 5+ spades, or 10-13 with 5-5 in majors.
+$1S_55weak := (10 TO 13 Points) AND Spades >= 5 AND Hearts >= 5 ;
+$1S_shape := Points >= 14 AND Spades >= 5 AND Hearts < 5 AND $spadeOpenShape ;
+$1Shand := $1S_55weak OR $1S_shape ;
+
+## Invitational / GF helpers used in many response structures
+$inv := 10 TO 12 Points ;
+$gf := Points >= 12 ;
+$slamish := Points >= 12 AND Controls >= 4 ;
+$weak := Points <= 7 ;
+$majDenialGF := $gf AND $noMajor4 ;
+$balGFNoMajor := $majDenialGF AND $semiBal ;
+
+
+## ============================================================
+## OPENING BIDS
+## ============================================================
+
+## Higher-level special openings first
+$.3N. := $3Nhand ;
+$.2N. := $2Nhand AND NOT $.3N. ;
+
+## Limited 2-level openings
+$.2C. := (10 TO 13 Points) AND $2Cshape AND NOT $.2N. AND NOT $.3N. ;
+$.2D. := (10 TO 13 Points) AND $2Dshape AND NOT $.2N. AND NOT $.3N. ;
+$.2H. := $2Hhand ;
+$.2S. := $2Shand ;
+
+## Natural 3-level preempts
+$.3C. := $3Cpre AND NOT $.3N. ;
+$.3D. := $3Dpre AND NOT $.3N. ;
+$.3H. := $3Hpre AND NOT $.3N. ;
+$.3S. := $3Spre AND NOT $.3N. ;
+
+## One-level openings
+$.1N. := $1Nhand ;
+$.1D. := $1Dhand AND NOT ($.2N. OR $.3N.) ;
+$.1H. := $1Hhand AND NOT ($.2C. OR $.2D. OR $.2H. OR $.2S. OR $.2N. OR $.3N.) ;
+$.1S. := $1Shand AND NOT ($.2C. OR $.2D. OR $.2H. OR $.2S. OR $.2N. OR $.3N.) ;
+$.1C. := $1Chand AND NOT ($.1N. OR $.1D. OR $.1H. OR $.1S. OR
+          $.2C. OR $.2D. OR $.2H. OR $.2S. OR $.2N. OR
+          $.3C. OR $.3D. OR $.3H. OR $.3S. OR $.3N.) ;
+
+## Pass style: aggressive with balanced hands/majors, conservative otherwise.
+$.P. := NOT ($.1C. OR $.1D. OR $.1H. OR $.1S. OR $.1N. OR
+             $.2C. OR $.2D. OR $.2H. OR $.2S. OR $.2N. OR
+             $.3C. OR $.3D. OR $.3H. OR $.3S. OR $.3N.) ;
+
+
+## ============================================================
+## 1C RESPONSES
+## ============================================================
+
+## Transfer responses show majors; MAFIA principle applies.
+$.1C.1D. := Hearts >= 4 ;
+$.1C.1H. := Spades >= 4 AND Hearts < 4 ;
+
+## 1S = no 4-card major and "catch-all", mostly weak but also some GF hands.
+$.1C.1S. := $noMajor4 AND (Points <= 9 OR (Points >= 10 AND Controls < 3)) ;
+
+## 1N = 10-12 balanced, no shortness, no 4-card major
+$.1C.1N. := (10 TO 12 Points) AND $semiBal AND $noMajor4 ;
+
+## 2C = no 4-card major, mostly invitational or strong (13)=(54) GF hands
+$.1C.2C. := $noMajor4 AND ((10 TO 12 Points AND NOT $semiBal) OR
+               (Points >= 13 AND
+                (pattern [1-3-5-4] OR pattern [3-1-5-4] OR
+                 pattern [1-3-4-5] OR pattern [3-1-4-5]))) ;
+
+## Direct shape-showing GF hands without a 4-card major
+$.1C.2D. := $noMajor4 AND Controls >= 3 AND Clubs >= 5 ;
+$.1C.2H. := $noMajor4 AND Controls >= 3 AND
+            ((Clubs >= 5 AND Diamonds >= 5) OR
+             pattern [1-3-2-7] OR pattern [1-3-7-2] OR
+             pattern [3-1-2-7] OR pattern [3-1-7-2] OR
+             pattern [6-3-3-1] OR pattern [3-6-3-1] OR
+             ($semiBal AND Points >= 16)) ;
+$.1C.2S. := Controls >= 3 AND (pattern [2-3-5-3] OR pattern [2-2-5-4]) ;
+$.1C.2N. := Controls >= 3 AND pattern [3-2-5-2] ;
+$.1C.3C. := Controls >= 3 AND (pattern [2-2-2-7] OR pattern [2-2-6-3]) ;
+$.1C.3D. := (pattern [3-3-5-2]) AND ((Points >= 16 AND Controls >= 5) OR Controls >= 7) ;
+$.1C.3H. := (pattern [3-3-5-2]) AND (3 TO 4 Controls) ;
+$.1C.3S. := (pattern [3-3-5-2]) AND (Controls ?= 5) ;
+$.1C.3N. := (pattern [3-3-5-2]) AND (Controls ?= 6) ;
+
+
+## ============================================================
+## 1C OPENER REBIDS AFTER MAJOR-SHOWING RESPONSE
+## ============================================================
+
+## After 1C-1D (showing hearts)
+$.1C.1D.2H. := (15 TO 17 Points) AND $semiBal AND Hearts >= 4 ;
+$.1C.1D.2C. := Hearts >= 4 AND Points >= 11 AND NOT ((15 TO 17 Points) AND $semiBal AND Hearts >= 4) ;
+$.1C.1D.1H. := Hearts < 4 AND Spades >= 4 AND Points >= 11 ;
+$.1C.1D.1S. := (18 TO 19 Points) AND $semiBal AND Hearts < 4 AND Spades < 5 ;
+$.1C.1D.1N. := (15 TO 17 Points) AND $semiBal AND Hearts < 4 AND Spades < 4 ;
+$.1C.1D.2D. := Spades ?= 5 AND Hearts ?= 3 AND
+               ((Clubs ?= 4 AND Diamonds <= 1) OR
+                (Diamonds ?= 4 AND Clubs <= 1)) ;
+$.1C.1D.2N. := Points >= 20 AND Hearts < 4 AND Spades < 4 ;
+
+## After 1C-1H (showing spades)
+$.1C.1H.2S. := (15 TO 17 Points) AND $semiBal AND Spades >= 4 ;
+$.1C.1H.2D. := Spades >= 4 AND Points >= 11 AND NOT ((15 TO 17 Points) AND $semiBal AND Spades >= 4) ;
+$.1C.1H.1S. := Spades < 4 AND Hearts >= 4 AND Points >= 11 ;
+$.1C.1H.1N. := (15 TO 17 Points) AND $semiBal AND Spades < 4 AND Hearts < 4 ;
+$.1C.1H.2C. := Points >= 20 AND Spades < 4 ;
+$.1C.1H.2N. := Points >= 20 AND Spades < 4 AND Hearts < 4 ;
+
+
+## ============================================================
+## 1D RESPONSES
+## ============================================================
+
+$.1D.1H. := Points <= 11 OR ($semiBal AND Points <= 12) ;
+$.1D.1S. := $slamish ;
+$.1D.1N. := ((7 TO 9 Points) AND Hearts >= 5 AND Spades >= 5) OR
+            ((9 TO 12 Points) AND ((Hearts >= 5 AND Spades >= 4) OR (Spades >= 5 AND Hearts >= 4))) ;
+$.1D.2C. := (7 TO 11 Points) AND Hearts >= 5 ;
+$.1D.2D. := (7 TO 11 Points) AND Spades >= 5 ;
+$.1D.2H. := ((6 TO 8 Points) OR $gf) AND Clubs >= 6 ;
+$.1D.2S. := ((6 TO 8 Points) OR $gf) AND Diamonds >= 6 ;
+$.1D.2N. := Points >= 5 AND
+            ((Hearts >= 7 AND (Ha OR Hk) AND
+              NOT (Sa OR Sk OR Sq OR Da OR Dk OR Dq OR Ca OR Ck OR Cq)) OR
+             (Spades >= 7 AND (Sa OR Sk) AND
+              NOT (Ha OR Hk OR Hq OR Da OR Dk OR Dq OR Ca OR Ck OR Cq))) ;
+$.1D.3C. := (8 TO 11 Points) AND Clubs >= 6 ;
+$.1D.3D. := (8 TO 11 Points) AND Diamonds >= 6 ;
+$.1D.3H. := (7 TO 9 Points) AND Hearts >= 7 ;
+$.1D.3S. := (7 TO 9 Points) AND Spades >= 7 ;
+$.1D.4C. := Clubs >= 7 AND ((Ha OR Hk) OR (Sa OR Sk)) ;
+$.1D.4D. := Diamonds >= 7 AND ((Ha OR Hk) OR (Sa OR Sk)) ;
+
+## 1D-1H opener rebids
+$.1D.1H.1S. := (15 TO 18 Points) AND $semiBal ;
+$.1D.1H.1N. := (19 TO 21 Points) AND $semiBal ;
+$.1D.1H.2C. := (14 TO 18 Points) AND (Clubs >= 6 OR (Clubs >= 5 AND Diamonds >= 4)) AND NOT $semiBal ;
+$.1D.1H.2D. := (14 TO 18 Points) AND (Diamonds >= 6 OR (Diamonds >= 5 AND Clubs >= 5)) AND NOT $semiBal ;
+$.1D.1H.2H. := (22 TO 23 Points) AND $semiBal ;
+$.1D.1H.2S. := Points >= 18 AND Clubs >= 4 AND Diamonds >= 5 AND NOT $semiBal ;
+$.1D.1H.2N. := (21 TO 22 Points) AND $semiBal ;
+$.1D.1H.3C. := Points >= 18 AND Clubs >= 6 ;
+$.1D.1H.3D. := Points >= 18 AND Diamonds >= 6 ;
+$.1D.1H.3H. := Points >= 18 AND Clubs >= 6 AND Diamonds >= 6 ;
+$.1D.1H.4C. := Controls >= 4 AND Points >= 19 ;
+
+
+## ============================================================
+## 1M RESPONSES
+## ============================================================
+
+## Game-forcing relay
+$.1H.1N. := Points >= 10 ;
+$.1S.1N. := Points >= 10 ;
+
+## Default forcing-notrump-like route
+$.1H.1S. := Points < 10 AND Hearts < 3 AND Clubs < 7 AND Diamonds < 6 AND Spades < 6 ;
+$.1S.2C. := Points < 10 AND Spades < 3 AND Clubs < 6 AND Diamonds < 7 AND Hearts < 7 ;
+
+## Third-cheapest artificial: bust with long suit OR 8-9 with doubleton support
+$.1H.2C. := (Hearts ?= 2 AND 8 TO 9 Points) OR Clubs >= 7 OR Spades >= 6 ;
+$.1S.2D. := (Spades ?= 2 AND 8 TO 9 Points) OR Diamonds >= 7 OR Hearts >= 6 ;
+
+## Fourth-cheapest fit show: weak 3/4-card raise or strongish 3-card raise
+$.1H.2D. := Hearts >= 3 AND ((Points <= 5) OR (9 TO 11 Points)) ;
+$.1S.2H. := Spades >= 3 AND ((Points <= 5) OR (9 TO 11 Points)) ;
+
+## Constructive 3-card raise
+$.1H.2H. := (6 TO 8 Points) AND Hearts >= 3 ;
+$.1S.2S. := (6 TO 8 Points) AND Spades >= 3 ;
+
+## Natural jump shifts / raises
+$.1H.2S. := (6 TO 8 Points) AND Spades >= 6 ;
+$.1H.2N. := Hearts >= 4 AND ((7 TO 11 Points) OR (10 TO 12 Points AND (Diamonds <= 1 OR Clubs <= 1 OR Spades <= 1))) ;
+$.1S.2N. := Spades >= 4 AND ((7 TO 11 Points) OR (10 TO 12 Points AND (Diamonds <= 1 OR Clubs <= 1 OR Hearts <= 1))) ;
+$.1H.3C. := (6 TO 9 Points) AND Clubs >= 6 ;
+$.1H.3D. := (6 TO 9 Points) AND Diamonds >= 6 ;
+$.1S.3C. := (6 TO 9 Points) AND Clubs >= 6 ;
+$.1S.3D. := (6 TO 9 Points) AND Diamonds >= 6 ;
+$.1S.3H. := (6 TO 9 Points) AND Hearts >= 7 ;
+$.1H.3H. := Hearts >= 4 AND Points <= 6 ;
+$.1S.3S. := Spades >= 4 AND Points <= 6 ;
+$.1H.3S. := Hearts >= 4 AND (4 TO 6 Points) AND (Spades <= 1 OR Diamonds <= 1 OR Clubs <= 1) ;
+$.1H.3N. := Hearts >= 4 AND (7 TO 9 Points) AND (Spades <= 1 OR Diamonds <= 1 OR Clubs <= 1) ;
+$.1S.3N. := Spades >= 4 AND (4 TO 6 Points) AND (Hearts <= 1 OR Diamonds <= 1 OR Clubs <= 1) ;
+$.1S.4C. := Spades >= 4 AND (7 TO 9 Points) AND (Hearts <= 1 OR Diamonds <= 1 OR Clubs <= 1) ;
+$.1H.4C. := Hearts >= 4 AND (7 TO 9 Points) AND Diamonds <= 1 ;
+$.1H.4D. := Hearts >= 4 AND (7 TO 9 Points) AND Clubs <= 1 ;
+$.1S.4D. := Spades >= 4 AND (7 TO 9 Points) AND Hearts <= 1 ;
+$.1S.4H. := Spades >= 4 AND (7 TO 9 Points) AND Diamonds <= 1 ;
+$.1H.4H. := Hearts >= 5 AND Points <= 5 ;
+$.1S.4S. := Spades >= 5 AND Points <= 5 ;
+
+## Common opener rebids after default response
+$.1H.1S.1N. := (18 TO 20 Points) AND $semiBal AND Hearts >= 4 AND Spades < 4 ;
+$.1H.1S.2C. := (10 TO 13 Points) AND $2Cshape ;
+$.1H.1S.2D. := Points >= 14 AND Diamonds >= 4 ;
+$.1H.1S.2H. := Hearts >= 6 ;
+$.1H.1S.2S. := Points >= 14 AND Spades >= 4 ;
+
+$.1S.2C.2D. := (10 TO 13 Points) AND $2Dshape ;
+$.1S.2C.2H. := Hearts >= 5 ;
+$.1S.2C.2S. := Spades >= 6 ;
+$.1S.2C.2N. := (18 TO 20 Points) AND $semiBal ;
+
+
+## ============================================================
+## 1NT RESPONSES
+## ============================================================
+
+## General structure after major-denying 1NT bids
+$.1N.2C. := Points >= 10 ;
+$.1N.2D. := (8 TO 10 Points) ;
+$.1N.2H. := Hearts >= 5 ;
+$.1N.2S. := Spades >= 5 ;
+$.1N.2N. := Clubs >= 4 AND Diamonds >= 4 ;
+$.1N.3C. := Clubs >= 5 AND Points <= 9 ;
+$.1N.3D. := Diamonds >= 5 AND Points <= 9 ;
+$.1N.3H. := Hearts >= 5 AND Spades >= 4 ;
+$.1N.3S. := Spades >= 5 AND Hearts >= 4 ;
+$.1N.3N. := $semiBal ;
+$.1N.4C. := Controls >= 4 ;
+$.1N.4D. := Hearts >= 6 ;
+$.1N.4H. := Spades >= 6 ;
+
+## GF relay continuations
+$.1N.2C.2D. := Clubs >= 5 ;
+$.1N.2C.2H. := (pattern [2-3-4-4]) OR (pattern [3-2-4-4]) OR (pattern [3-3-4-3]) OR (pattern [3-3-3-4]) ;
+$.1N.2C.2S. := Diamonds >= 5 AND Spades <= 2 ;
+$.1N.2C.2N. := Diamonds >= 5 AND Hearts <= 2 ;
+$.1N.2C.3C. := Diamonds >= 6 ;
+$.1N.2C.3D. := pattern [3-3-5-2] AND (2 TO 3 Controls) ;
+$.1N.2C.3H. := pattern [3-3-5-2] AND (Controls ?= 4) ;
+$.1N.2C.3S. := pattern [3-3-5-2] AND (Controls ?= 5) ;
+$.1N.2C.3N. := pattern [3-3-5-2] AND (Controls ?= 6) ;
+
+$.1N.2C.2H.2S.2N. := pattern [2-3-4-4] ;
+$.1N.2C.2H.2S.3C. := pattern [3-3-3-4] ;
+$.1N.2C.2H.2S.3D. := pattern [3-2-4-4] AND (2 TO 3 Controls) ;
+$.1N.2C.2H.2S.3H. := pattern [3-2-4-4] AND (Controls ?= 4) ;
+$.1N.2C.2H.2S.3S. := pattern [3-2-4-4] AND (Controls ?= 5) ;
+$.1N.2C.2H.2S.3N. := pattern [3-2-4-4] AND (Controls ?= 6) ;
+
+$.1N.2C.2S.2N.3C. := pattern [2-2-5-4] ;
+$.1N.2C.2S.2N.3D. := pattern [2-3-5-3] AND (2 TO 3 Controls) ;
+$.1N.2C.2S.2N.3H. := pattern [2-3-5-3] AND (Controls ?= 4) ;
+$.1N.2C.2S.2N.3S. := pattern [2-3-5-3] AND (Controls ?= 5) ;
+$.1N.2C.2S.2N.3N. := pattern [2-3-5-3] AND (Controls ?= 6) ;
+
+## Invitational relay
+$.1N.2D.2H. := Hearts ?= 2 AND Points <= 12 ;
+$.1N.2D.2S. := Hearts ?= 3 AND Spades ?= 2 AND Points <= 12 ;
+$.1N.2D.2N. := Hearts ?= 3 AND Spades ?= 3 AND Points <= 12 ;
+$.1N.2D.3C. := Clubs >= 6 AND Points <= 12 ;
+$.1N.2D.3D. := Diamonds >= 6 AND Points <= 12 ;
+$.1N.2D.3H. := Hearts ?= 2 AND Points >= 13 ;
+$.1N.2D.3S. := Hearts ?= 3 AND Spades ?= 2 AND Points >= 13 ;
+$.1N.2D.3N. := Hearts ?= 3 AND Spades ?= 3 AND Points >= 13 ;
+
+
+## ============================================================
+## 2m RESPONSES
+## ============================================================
+
+$.2C.2D. := Points >= 6 ;
+$.2D.2H. := Points >= 6 ;
+
+$.2C.2H. := Hearts >= 2 ;
+$.2D.2S. := Spades >= 2 ;
+$.2C.2S. := Spades >= 6 ;
+
+$.2C.2N. := Clubs >= 5 ;
+$.2C.3C. := Diamonds >= 5 ;
+$.2D.2N. := Clubs >= 5 ;
+$.2D.3C. := Diamonds >= 5 ;
+$.2D.3D. := Hearts >= 5 ;
+
+$.2C.3D. := Hearts >= 3 AND Points >= 9 ;
+$.2D.3H. := Spades >= 3 AND Points >= 9 ;
+$.2C.3H. := Hearts >= 3 AND Points <= 8 ;
+$.2D.3S. := Spades >= 3 AND Points <= 8 ;
+$.2C.3S. := Spades >= 5 AND Hearts < 3 ;
+$.2C.3N. := Hearts >= 3 ;
+$.2D.3N. := Spades >= 3 ;
+$.2C.4H. := Hearts >= 4 ;
+$.2D.4S. := Spades >= 4 ;
+$.2C.4N. := Hearts >= 3 AND Controls >= 4 ;
+$.2D.4N. := Spades >= 3 AND Controls >= 4 ;
+
+## Relay answers
+$.2C.2D.2H. := Hearts >= 6 ;
+$.2D.2H.2S. := Spades >= 6 ;
+$.2C.2D.2S. := pattern [3-5-4-1] OR pattern [3-5-1-4] ;
+$.2C.2D.2N. := Clubs >= 3 AND Diamonds >= 4 ;
+$.2D.2H.2N. := Clubs >= 3 AND Diamonds >= 4 ;
+$.2C.2D.3C. := Hearts >= 5 AND Clubs >= 5 ;
+$.2D.2H.3D. := Spades >= 5 AND Diamonds >= 5 ;
+$.2C.2D.3H. := Hearts >= 7 ;
+$.2D.2H.3S. := Spades >= 7 ;
+
+
+## ============================================================
+## 2M RESPONSES
+## ============================================================
+
+$.2H.P. := Points <= 8 ;
+$.2S.P. := Points <= 8 ;
+
+$.2H.2S. := Spades >= 5 AND Hearts < 3 ;
+$.2H.2N. := (Clubs >= 4 AND Diamonds >= 4) OR $gf ;
+$.2H.3H. := Hearts >= 3 ;
+$.2H.3S. := Spades >= 5 AND Hearts >= 2 ;
+$.2H.3N. := $gf AND Hearts < 3 ;
+$.2H.4H. := Hearts >= 3 AND Points >= 10 ;
+
+$.2S.2N. := (Clubs >= 4 AND Diamonds >= 4) OR $gf ;
+$.2S.3S. := Spades >= 3 ;
+$.2S.3N. := $gf AND Spades < 3 ;
+$.2S.4S. := Spades >= 3 AND Points >= 10 ;
+
+## 2M-2N asks longer minor
+$.2H.2N.3C. := Clubs >= Diamonds ;
+$.2H.2N.3D. := Diamonds > Clubs ;
+$.2S.2N.3C. := Clubs >= Diamonds ;
+$.2S.2N.3D. := Diamonds > Clubs ;
+
+
+## ============================================================
+## 2NT RESPONSES
+## ============================================================
+
+$.2N.3C. := $gf ;
+$.2N.3D. := (8 TO 10 Points) ;
+$.2N.3H. := Hearts >= 3 ;
+$.2N.3S. := Spades >= 3 ;
+$.2N.3N. := Points <= 7 ;
+
+$.2N.3C.3D. := Hearts >= 7 ;
+$.2N.3C.3H. := Spades >= 7 ;
+$.2N.3C.3S. := Hearts >= 7 AND Hpts >= 8 ;
+$.2N.3C.3N. := Spades >= 7 AND Spts >= 8 ;
+
+$.2N.3D.3H. := Hearts >= 7 ;
+$.2N.3D.3S. := Spades >= 7 ;
+$.2N.3D.4C. := Hearts >= 4 ;
+$.2N.3D.4D. := Spades >= 4 ;
+$.2N.3D.4H. := Hearts >= 7 ;
+$.2N.3D.4S. := Spades >= 7 ;
+
+
+## ============================================================
+## 3NT RESPONSES
+## ============================================================
+
+$.3N.4C. := Controls ?= 2 ;
+$.3N.4D. := Controls != 1 ;
+$.3N.4H. := Hearts >= 7 ;
+$.3N.4S. := Spades >= 7 ;
+$.3N.4N. := Controls >= 3 ;
+
+$.3N.4C.4D. := Points >= 14 ;
+$.3N.4C.4H. := Hearts >= 7 ;
+$.3N.4C.4S. := Spades >= 7 ;
+$.3N.4C.4N. := Controls >= 3 ;
+$.3N.4C.5C. := Clubs >= 7 ;
+$.3N.4C.5D. := Diamonds >= 7 ;
+
+$.3N.4D.4H. := Hearts >= 7 ;
+$.3N.4D.4S. := Spades >= 7 ;
+$.3N.4D.4N. := Points >= 14 ;
+$.3N.4D.5C. := Clubs >= 7 ;
+$.3N.4D.5D. := Diamonds >= 7
+END

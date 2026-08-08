@@ -29,7 +29,9 @@ bidlab [options] reps [RuleN [RuleE [RuleS [RuleW]]]]
 | `-s seed` | RNG seed for reproducibility (default: time-based) |
 | `-L level` | Log level: `error`\|`warning`\|`info`\|`debug` (default `info`) |
 | `--rules-only` | Stop each auction the moment no rule matches, instead of calling `suggestContract()`. No simulation is run for the guess step; `Bidding`/`Contract`/`Score`/`IMPs vs Par` columns are omitted and no end-of-run summary is logged. The per-deal SDA that computes `Par Bid`/`Par Score` is also skipped, and those columns are omitted too — this is the more expensive of the two simulations, so `--rules-only` runs are correspondingly faster. |
-| `--validate` | Check each `-i` system's rule tree offline for authoring mistakes instead of dealing/bidding — see [System Validation](#system-validation---validate-mode) below. No `reps`/rule args, `-o`, `-b`, `-v`, or `-nchecks` are needed; the run never reaches deal generation. |
+| `--validate` | Check each `-i` system's rule tree offline for authoring mistakes instead of dealing/bidding — see [System Validation](#system-validation---validate-mode) below. Also always prints static/structural system stats (bid counts by round, etc. — see [System Stats](#system-stats) below); this isn't gated by a flag, since it's a byproduct of the same tree walk. No `reps`/rule args, `-o`, `-b`, `-v`, or `-nchecks` are needed; the run never reaches deal generation. |
+| `--self-test` | Exercise `combineRule()`/`negateRule()`'s `NULL`-handling directly and exit — no `-i`, no rules file, no dealing. Prints `[self-test] PASSED` and exits 0, or logs the specific failing assertion and exits 1. Exists because, with `$ANY` now built-in (see `hand-spec.md`), no live code path calls these with a `NULL` operand anymore, so nothing else in a normal run exercises that handling. |
+| `--stats` | Print dynamic (runtime) system stats at the end of a normal run — currently rule coverage by round (how often `nextBid()` matched a rule vs. fell through to `suggestContract()`'s guess). See [System Stats](#system-stats) below. Off by default; unlike the static stats above, this is real per-run behavior, not free structural data, so it's opt-in. Works with `--rules-only` (and is often paired with it, since rule coverage alone doesn't need the simulation `--rules-only` skips). |
 
 Positional arguments after options:
 - `reps` — number of deals to process
@@ -84,7 +86,8 @@ main()
 | `parse_rules.cpp/.h` | Reads a rules file, runs it through `majMinExpand`, parses the result |
 | `majMinExpand.hpp/.cpp` | Maj/Min/OMaj/OMin/BMaj/BMin macro expansion and bid-sequence legality checking (see `hand-spec.md`); shared by Bidder and Dealer |
 | `bid.hpp` | `bid` type (integer 0–39), strain/level accessors, vulnerability enum — used by `majMinExpand` and Bidder's convention-tree builder alike |
-| `tnode.cpp/.h` | Parse tree node type for rule expressions; also owns the `$Name` -> node lookup, a hash map keyed per definition tree (rather than a linear scan) since one process may load several independent rules files (see `biddingSystem` below) |
+| `tnode.cpp/.h` | Parse tree node type for rule expressions; also owns the `$Name` -> node lookup, a hash map keyed per definition tree (rather than a linear scan) since one process may load several independent rules files (see `biddingSystem` below); `combineRule()`/`negateRule()` (Bidder-only) live here too |
+| `simplify.hpp/.cpp` | `simplifyRule()`: folds redundant comparisons and propagates context into `OR` branches, hooked into `combineRule()` — see `hand-spec.md`'s "Rule Simplification". No Bidder-specific dependency, usable by Dealer too, though nothing there calls it yet |
 | `rawScore.cpp/.h` | Bridge scoring: raw trick-count → contract score |
 | `translations.c/.h` | PBN and BBO LIN serialization of hands and boards |
 | `bridge.l / bridge.y` | Flex/Bison grammar for the rule language |
@@ -187,6 +190,105 @@ hand and, for `OVERLAP`, the names of the tied siblings. A one-line summary per
 system (`decisionPoint`/`overlap`/`gap`/`unreachable`/`duplicate-text` counts)
 is logged at the end. `--validate` always exits 0 — it's a diagnostic report,
 not a pass/fail gate; a nonzero-findings run isn't treated as a build failure.
+
+---
+
+## System Stats
+
+Descriptive metadata about a system, split into two kinds depending on
+whether it's knowable from the rule file alone or only from an actual run:
+
+**Static (structural)** — always printed by `--validate`, unconditionally,
+no separate flag. It's a free byproduct of the same tree walk `--validate`
+already does (`walkValidate()`/`validateSystem()`), so there's no reason to
+gate it separately. `validateSystem()` still logs findings (`OVERLAP`/
+`GAP`/`UNREACHABLE`/`DUPLICATE`) per system as it walks, same as always —
+but the structural numbers and the `decisionPoints`/`overlaps`/`gaps`/
+`unreachable`/`duplicates` counts that used to print as a one-line summary
+per system are collected instead and printed once, together, as a single
+table (`printStatsTable()`) after every `-i` system has been walked: one
+row per stat, one **column per system**, so comparing several systems'
+structure side by side doesn't mean scrolling back and forth between
+separate per-system blocks:
+
+```
+System structure & validation summary:
+                       camel_spec.txt  bws_input.txt
+Opening bids (North)               16             18
+Responses (South)                 114            111
+...
+Decision points                    31             92
+Overlap                            25             36
+Gap                                21             54
+Unreachable                         0              7
+Duplicate-text                      2              3
+```
+
+| Row | Meaning |
+|-----|---------|
+| `Opening bids (North)`, `Responses (South)`, `Opener's rebid (North)`, `Responder's rebid (South)`, `Opener's 2nd rebid (North)`, `Responder's 2nd rebid (South)` | Count of `$.`-sequence rules defined at that depth (1–6). A round is only included as a row if at least one of the compared systems has a nonzero count there. |
+| `Round 7+ (North/South)` | Combined count for depth 7 and beyond — rare enough not to name individually (row included only if nonzero for at least one system). |
+| `Total bid-sequence rules` | Sum of the above, per system. |
+| `Hand-property rules` | Rules that aren't `$.`-prefixed (e.g. `$balanced`, `$ntop`) — not part of the convention tree, counted separately by walking the flat definition list (`biddingSystem::countHandPropertyRules()`), deduplicated by name so a redefined rule counts once. |
+| `Pure path waypoints` | Depth>0 nodes with no rule of their own — exist only as a prefix for a deeper `$.`-sequence (see `biddingSystem::processRule`). |
+| `Max auction depth` | Deepest node actually visited by the walk. |
+| `Decision points`, `Overlap`, `Gap`, `Unreachable`, `Duplicate-text` | Same counts the old one-line-per-system summary reported, now table rows. |
+
+Column width is derived from each system's name and its widest value, so it
+adapts to however the `-i` files were named/pathed on the command line —
+tests that check this table's output match label and value with flexible
+whitespace between them, not exact column alignment.
+
+**Important**: these counts only include rules the walk actually *visits* —
+since `walkValidate()` stops recursing below an `UNREACHABLE` decision point
+(see above), a rule that's textually present in the file but sits below one
+is silently excluded from every count here, the same way it's excluded from
+live play. This is deliberate: the report reflects what the system can
+actually do, not what the file textually contains.
+
+**Dynamic (runtime)** — gated behind `--stats`, since it's real per-run
+behavior gathered while dealing/bidding, not free structural data. Printed
+at the end of a run as a table (`printRuleCoverageTable()`, sharing the
+same `printTable()` layout helper `printStatsTable()` uses — see above), one
+column per `-i` system, using the same round labels as the static report:
+
+```
+System rule coverage (--stats):
+                             testinput.txt
+Opening bids (North)        30/30 (100.0%)
+Responses (South)           27/30 (90.0%)
+...
+Overall                     82/112 (73.2%)
+```
+
+Each cell is `matched/total (pct%)` for that round and system — `guessed`
+isn't spelled out separately the way it was before this became a table
+(it's `total - matched`), to keep cells compact enough for side-by-side
+comparison. For each round, how often `nextBid()` found a matching rule vs.
+fell through to `suggestContract()`'s guess (tallied in `auction::nextBid()`
+into `matchedByRound`/`guessedByRound`, indexed by system and round). This
+is the empirical, ground-truth counterpart to `--validate`'s `GAP`
+percentage, which only *predicts* the same thing from 3000 sampled hands
+per decision point — the two are worth comparing. Unlike the static table,
+rounds beyond 6 are printed individually here (`Round 7 (North)`,
+`Round 8 (South)`, ...), not lumped into one bucket — losing which specific
+deep round is under-covered would defeat the point of a per-round
+breakdown. The bookkeeping itself runs unconditionally (a few integer
+increments per bid, negligible next to a DDS solve); only whether it's
+*printed* depends on `--stats`. Works with `--rules-only` — the
+`guessed[]` tally happens before `--rules-only`'s early return in
+`nextBid()`, so rule coverage can be checked without paying for the
+simulation `--rules-only` skips.
+
+**Deferred, not yet implemented**: macro-expansion counts (how many
+Maj/Min-macro usages were resolved, split into name-forks vs.
+body-duplications, plus illegal forks pruned) would need new counters added
+to `shared/majMinExpand.cpp`, which currently only has debug-level traces,
+not accumulated counts. Also deferred: surfacing rejection-sampling cost
+(`dealAndCheck`/`checkHand` attempt counts, especially in
+`suggestContract()`'s partner-hand simulation) and DDS call count/timing
+under `--stats` — the DDS timing exists already as a `funcStats` instance
+but is currently only visible via `-L debug`, not tied to `--stats` at all.
 
 ---
 

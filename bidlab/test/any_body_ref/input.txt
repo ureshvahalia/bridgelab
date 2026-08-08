@@ -1,0 +1,10 @@
+## No $Any definition anywhere in this file -- and it's referenced from
+## within another rule's own body ($X's), which used to require a local
+## definition, since name references resolve during parsing while $ANY was
+## only injected into the definition table afterward. find_rule() now
+## resolves "$ANY" directly, independent of defroot/parsing order, so this
+## works without ever defining it.
+$X := $Any AND (Spades >= 4);
+$.1N. := $X;
+$.P. := NOT $X
+END

@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/bin/msys2/Debug/bidlab.exe",
             // "args": [ "-v", "details.csv", "-p", "StrongNT_pbn.csv" ],
-            "args": [ "-i", "input/bws_input.txt,input/camel_spec.txt,input/UreshVivek.txt,input/UreshJayPrecision.txt", "-o", "output/rules_only.csv", "-P", "HopeUnobstructed", "--rules-only", "-nchecks", "64", "20000", "Any", "Any" ],
+            "args": [ "-i", "input/bws_input.txt,input/camel_spec.txt,input/UreshJay.txt", "-o", "output/results.csv", "--stats","-P", "HopeUnobstructed", "-nchecks", "32", "1000", "Any", "Any" ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
@@ -57,7 +57,7 @@
             // --validate checks each -i system's rule tree for overlaps/gaps/
             // unreachable rules/duplicate text and exits -- no reps/rule args,
             // -o, or -nchecks needed; it never gets that far.
-            "args": [ "-i", "input/UreshJay.txt", "--validate" ],
+            "args": [ "-i", "input/UreshJay.txt,input/camel_spec.txt,input/bws_input.txt,input/UreshVivek.txt", "--validate" ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

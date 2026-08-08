@@ -58,6 +58,16 @@ extern void* find_rule (void*, const char*);
 extern void* find_def_node (void*, const char*);
 extern void  index_def (const char*, void*);
 extern TPTR match_string (char*);
+extern void* kwordFnAt (int idx);
+extern void* suffixFnAt (int idx);
+// Transient-node arena -- see shared/tnode.cpp's "Transient-node arena"
+// comment. Bracket one hand's worth of accumulator-building (combineRule()/
+// negateRule() calls) with these; make_leaf() allocates from the arena
+// instead of malloc() only while one is active, and everything it handed
+// out becomes invalid (silently reusable) at the next tnodeArenaBegin() --
+// never call these around anything whose nodes need to outlive one hand.
+extern void tnodeArenaBegin (void);
+extern void tnodeArenaEnd (void);
 #ifdef BIDDER
 extern void* combineRule (void* l, void* r);
 extern void* negateRule (void* r);
