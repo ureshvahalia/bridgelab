@@ -16,29 +16,28 @@ PBN2oneHand (const char* str, oneHand hand)
     if (*str == '$')
         str++;                      // Skip leading '$'
     for (i = 0; i < 16; i++)    {   // Valid hand described by 16-char str
-        if (hp - hand >= NCARDS_IN_HAND)
-            return NULL;    // Too many cards
         char c = *str++;
+        int cardVal;
         switch (c)  {
         case 'A':
         case 'a':
-            *hp++ = suitBase;
+            cardVal = suitBase;
             break;
         case 'K':
         case 'k':
-            *hp++ = suitBase + 1;
+            cardVal = suitBase + 1;
             break;
         case 'Q':
         case 'q':
-            *hp++ = suitBase + 2;
+            cardVal = suitBase + 2;
             break;
         case 'J':
         case 'j':
-            *hp++ = suitBase + 3;
+            cardVal = suitBase + 3;
             break;
         case 'T':
         case 't':
-            *hp++ = suitBase + 4;
+            cardVal = suitBase + 4;
             break;
         case '9':
         case '8':
@@ -48,19 +47,26 @@ PBN2oneHand (const char* str, oneHand hand)
         case '4':
         case '3':
         case '2':
-            *hp++ = suitBase + 14 - (c - '0');
-            break;
+            cardVal = suitBase + 14 - (c - '0');
             break;
         case '.':
         case ',':
             suitBase += NCARDS_IN_SUIT;
             if (suitBase >= PACK_SIZE)
                 return NULL;    // Too many '.'s
-            break;
+            continue;           // not a card -- skip the hp-bound check/assign below
         default:
             return NULL;
-            break;
         }
+        // Only reached for an actual rank character, never for a trailing
+        // separator marking a void in the hand's last suit -- see the
+        // "continue" above. Checking this unconditionally at the top of the
+        // loop (as before) misfired on that trailing separator once all 13
+        // cards were already placed, rejecting every otherwise-valid hand
+        // void in its last suit.
+        if (hp - hand >= NCARDS_IN_HAND)
+            return NULL;    // Too many cards
+        *hp++ = cardVal;
     }
     return (char*)(((hp - hand) == NCARDS_IN_HAND) ? str : NULL);
 }

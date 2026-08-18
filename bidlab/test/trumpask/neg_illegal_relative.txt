@@ -1,0 +1,4 @@
+## An ask-template's own relative sequence must still rank legally --
+## 4C ranks below 5N, so this must be fatal.
+$.?.BAD.5N.4C. := (Points>=0);
+END

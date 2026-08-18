@@ -1,0 +1,12 @@
+## RKCB reachable via three differently-shaped auctions, each setting Trump
+## at a different point -- the responses are declared exactly once, in the
+## $.?.RKCB. ask-template, and grafted onto each attachment point below.
+$.1H.3H@.4N.    := (Points>=12) :? RKCB;
+$.1H@.2N.3C.4N. := (Points>=12) :? RKCB;
+$.1S.2H@.4N.    := (Points>=12) :? RKCB;
+
+$.?.RKCB.5C. := (Trumpkcs ?= 1) OR (Trumpkcs ?= 4);
+$.?.RKCB.5D. := (Trumpkcs ?= 0) OR (Trumpkcs ?= 3);
+$.?.RKCB.5H. := (Trumpkcs ?= 2) AND NOT (Trumpq);
+$.?.RKCB.5S. := (Trumpkcs ?= 2) AND (Trumpq);
+END

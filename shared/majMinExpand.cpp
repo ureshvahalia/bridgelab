@@ -16,6 +16,7 @@
 #include <vector>
 #include "bid.hpp"
 #include "majMinExpand.hpp"
+#include "majMinExpandInternal.hpp"
 #include "log.h"
 
 namespace {
@@ -50,9 +51,18 @@ bool isIdentChar (char c)   { return isalnum ((unsigned char)c) != 0; }
 // wrongly picked out as the MAJ keyword, the same class of bug as the
 // digit-suffix case isIdentStart/isIdentChar fix above, but for names
 // containing '_', '-', or '.' instead of trailing digits.
+//
+// '@' and '?' are also accepted even though they're not legal DEFNAME
+// characters in the real grammar: shared/trumpAskExpand.cpp's later passes
+// use them (a trailing '@' on a bid token, a reserved "?" segment for
+// ask-template declarations -- see shared/hand-spec.md), and both are
+// fully resolved/stripped before the real parser ever sees the text. This
+// module has to at least pass them through a name unmolested, the same
+// way it already does for '_'/'-'/'.', rather than choking on them here.
 bool isDefNameChar (char c)
 {
-    return isalnum ((unsigned char)c) || (c == '_') || (c == '-') || (c == '.');
+    return isalnum ((unsigned char)c) || (c == '_') || (c == '-') || (c == '.') ||
+           (c == '@') || (c == '?');
 }
 
 bool matchesWordCI (const std::string& text, size_t pos, const char* word)
@@ -279,11 +289,24 @@ struct BidNameToken {
     Suit concreteSuit;      // SUIT_NONE if this is a placeholder
     KeywordKind placeholder;// KW_NONE if this is concrete/pass
     std::string levelDigit; // e.g. "2" ("" for Pass)
+    bool setsTrump = false; // true if this token carried a trailing '@' (see trumpAskExpand.cpp)
 };
 
 // Returns false if name doesn't start "$." or any token fails to parse as a
 // legal bid-sequence token shape — callers treat that as "ordinary name,
 // no forking", exactly like the original hand-written parseBid() does.
+//
+// A trailing '@' on any token (e.g. "3H@", "3Maj@") marks it as setting
+// Trump — see shared/trumpAskExpand.hpp. It's stripped here, before suit/
+// keyword classification, and carried on BidNameToken::setsTrump purely
+// mechanically: this function has no opinion on what '@' means (in
+// particular it does NOT reject '@' on Pass/NT here — that's a semantic
+// judgment left to trumpAskExpand.cpp, which runs after this file and
+// understands Trump semantics). Doing the strip here, rather than in a
+// separate pass, is what lets a Maj/Min-forked AND trump-marked token like
+// "3Maj@" still be recognized and forked correctly instead of silently
+// falling through to "ordinary name, no forking" the way an unstripped
+// "3Maj@" would (rest == "MAJ@" matches no suit letter and no keyword).
 bool analyzeBidName (const std::string& name, std::vector<BidNameToken>& tokens)
 {
     if (name.size() < 2 || name[0] != '$' || name[1] != '.')
@@ -297,9 +320,17 @@ bool analyzeBidName (const std::string& name, std::vector<BidNameToken>& tokens)
         i = dot + 1;
         if (token.empty())
             return false;
+        bool setsTrump = false;
+        if (token.back() == '@') {
+            setsTrump = true;
+            token.pop_back();
+            if (token.empty())
+                return false;
+        }
         std::string up = upper (token);
         BidNameToken t;
         t.raw = token;
+        t.setsTrump = setsTrump;
         if (up == "P") {
             t.isPass = true;
             t.concreteSuit = SUIT_NONE;
@@ -446,7 +477,7 @@ std::string substituteNameTokens (const std::vector<BidNameToken>& tokens, Suit 
     std::string out = "$.";
     for (const auto& t : tokens) {
         if (t.isPass) {
-            out += "P.";
+            out += t.setsTrump ? "P@." : "P.";
             continue;
         }
         char letter;
@@ -456,7 +487,7 @@ std::string substituteNameTokens (const std::vector<BidNameToken>& tokens, Suit 
         else if (t.placeholder == KW_OMIN) letter = suitLetter (complementSuit (minorChoice));
         else if (t.concreteSuit != SUIT_NONE) letter = suitLetter (t.concreteSuit);
         else letter = 'N'; // no-trump
-        out += t.levelDigit + std::string (1, letter) + ".";
+        out += t.levelDigit + std::string (1, letter) + (t.setsTrump ? "@" : "") + ".";
     }
     return out;
 }
@@ -578,6 +609,17 @@ void addMappedLine (int originalLine)
 }
 
 } // namespace
+
+bool isWellFormedConcreteBidSequenceName (const std::string& name)
+{
+    std::vector<BidNameToken> tokens;
+    if (!analyzeBidName (name, tokens))
+        return false;
+    for (const auto& t : tokens)
+        if (t.placeholder != KW_NONE)
+            return false;   // Maj/Min placeholders never expected in a grafted name
+    return isLegalBidSequence (tokens);
+}
 
 int mapExpandedLineToOriginal (int expandedLine)
 {

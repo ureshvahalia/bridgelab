@@ -1,0 +1,24 @@
+## Regression check for the retroactive-waypoint-mutation trap in
+## precomputeSiblingNegations(): "1N.2C" is first created as a waypoint
+## (rule=NULL) while processing "$.1N.2C.2H.", then a LATER statement
+## ("$.1N.2C.") retroactively sets its rule via direct field mutation --
+## and "1N.2D" (a sibling inserted, still under "1N", BEFORE that
+## retroactive mutation happens) must still see "1N.2C"'s FINAL rule, not
+## its state at the moment "1N.2D" was inserted. A naive negation
+## computation piggybacked onto tree construction (rather than a single
+## pass after the whole file is parsed) would see "1N.2C" as still a
+## waypoint (nothing to negate) when computing "1N.2D"'s own
+## negatedEarlierSiblings, silently dropping "NOT (Points >= 8)" from
+## South's accumulated hand. "1N.2D.2H.3C." (South's rebid, so it shares
+## South's accumulator with the "1N.2C"/"1N.2D" choice two turns earlier)
+## requires "Points >= 8", directly contradicting that inherited negation
+## -- nothing about 5+ diamonds and 2+ hearts rules out 8+ points on its
+## own, so a 100.0% GAP there can only come from the correctly-inherited
+## negation, not from "1N.2D.2H."'s own rule.
+$Any := (Points >= 0);
+$.1N.2C.2H. := (Hearts >= 4);
+$.1N.2D. := (Diamonds >= 5);
+$.1N.2C. := (Points >= 8);
+$.1N.2D.2H. := (Hearts >= 2);
+$.1N.2D.2H.3C. := (Points >= 8);
+END

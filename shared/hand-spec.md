@@ -156,6 +156,9 @@ These test a specific suit.  The prefix selects the suit:
 | `Sl` or `Slen` | Length of the spade suit (also `Hl`, `Dl`, `Cl`) |
 | `Spts` | High-card points in spades (also `Hpts`, `Dpts`, `Cpts`) |
 | `Skcs` or `Skeycards` | Key cards in spades: Ace of any suit + King of spades (also `Hkcs`, etc.) |
+| `Shon` | Count of top-3 honors (A/K/Q) held in spades (also `Hhon`, etc.) |
+| `Sctl` | Controls in spades only (Ace=2, King=1) (also `Hctl`, etc.) |
+| `Ssupport` | Support points if spades were trump: HCP + shortness points in the other three suits, counted only with 3+ card support — 1/2/3 for doubleton/singleton/void at exactly 3 spades, 1/3/5 at 4+ (also `Hsupport`, etc.) |
 
 **Specific-card tests** (return 1 if the card is held, 0 otherwise):
 
@@ -804,4 +807,166 @@ Every expansion Bidder or Dealer performs is written back out, fully
 resolved, to `<rules-file>.expanded.txt` next to the original file — a
 normal, re-parseable rules file with every macro already gone. In Debug
 builds (`-DDEBUG2`), each expansion is also traced to stderr as it happens,
-e.g. `[majMinExpand] $.1N.2C.2Maj. -> $.1N.2C.2S., $.1N.2C.2H.,`.
+e.g. `[majMinExpand] $.1N.2C.2Maj. -> $.1N.2C.2S., $.1N.2C.2H.,`. Trump/
+ask-template resolution (below) runs as a further pass after this one and
+writes its own result to `<rules-file>.trumpask.expanded.txt` — a separate
+file, not a further rewrite of `.expanded.txt` above, so the latter always
+shows Maj/Min's own output in isolation.
+
+## Trump Context
+
+Hand-eval keywords are normally hardcoded to one suit (`Skcs`, `Hkcs`, ...).
+`Trump`-prefixed keywords let a rule instead reference "whichever suit was
+agreed," resolved once, at load time, for each rule independently — this is
+what makes something like RKCB expressible without retyping the same
+key-card logic once per suit.
+
+### Marking a bid as setting Trump: `@`
+
+A trailing `@` on any bid token in a `$.`-sequence name marks that call as
+setting Trump to its own suit:
+
+```
+$.1H.3H@.4N. := ...
+```
+
+Here the raise to `3H` sets Trump to hearts for this rule and everything
+that follows in its own text. `@` is consumed entirely during
+preprocessing — it's never a real bid token and never reaches the parser
+or the convention tree; `bidHand()`/`nextBid()` see plain `1H-3H-4N` like
+any other auction.
+
+Re-marking later in the same name is fine and simply moves the anchor —
+useful when an earlier suit bid wasn't actually an agreement (a cue bid,
+4th-suit-forcing, a new suit before a fit is found):
+
+```
+$.1H.2C.2D.3C@. := ...
+## 2D is 4th-suit-forcing (artificial, not diamonds); 3C is the real
+## club agreement. An inferred "last suit bid" anchor would get 2D wrong,
+## which is exactly why the anchor is explicit rather than inferred.
+```
+
+`@` on `P` or an `N` (notrump) token is rejected at load time — neither
+names a suit, so there's nothing for Trump to resolve to.
+
+### Referencing Trump: `Trump<suffix>`
+
+`Trump`, alone or as a prefix, resolves against the nearest `@` **earlier
+in the same rule's own text** (its name, then its body, read in that
+order — the same reading-order rule `Maj`/`OMaj` anchoring already uses,
+see below):
+
+- Followed immediately by another identifier character, `Trump` substitutes
+  the resolved suit's single letter, recombining with whatever suit-suffix
+  keyword follows: `Trumpkcs` → `Hkcs`, `Trumpq` → `Hq`, `Trumphon` →
+  `Hhon`. No suffix vocabulary needs to be known ahead of time — an unknown
+  suffix just surfaces as an ordinary "unknown keyword" error from the
+  parser, the same as a hand-typed typo would.
+- At a word boundary (nothing follows), `Trump` substitutes the full
+  suit-name keyword — bare `Trump` → `Hearts` — mirroring why bare `Maj`/
+  `Min` already substitute to the word rather than a lone letter (a single
+  letter isn't a valid standalone keyword).
+
+```
+$.1H.3H@.4N.5C. := (Trumpkcs ?= 1) OR (Trumpkcs ?= 4);
+## resolves to: (Hkcs ?= 1) OR (Hkcs ?= 4)
+```
+
+**Anchor scoping is local, not inherited.** `Trump` used with no `@`
+anywhere earlier in that same rule's own name is a fatal load-time error —
+there is deliberately no lookup of an anchor set by some other, shorter
+rule elsewhere in the file (e.g. a separate `$.1H.2H@.` rule doesn't anchor
+`$.1H.2H.3N.`'s own `Trump` references). Doing so would need a whole-file
+collection pass before anything could resolve, plus a policy for which of
+several possible ancestor rules wins — real complexity, and it would mean
+a rule's meaning depends on other rules existing elsewhere in the file,
+unlike everything else in this language. Since `$.`-names are always
+spelled out in full, the fix is just to repeat `@` at the same token
+position in the longer name:
+
+```
+$.1H.2H@. := ...;
+$.1H.2H@.3N. := (Trumpl ?= 5);   ## marker repeated, not inherited
+```
+
+## Ask Templates
+
+A set of responses to an asking bid (RKCB, Stayman, a control ask, ...) is
+often identical regardless of which auction reached it — RKCB's key-card
+responses don't depend on whether the agreed suit was set by `1H-3H-4N`,
+`1H-2N-3C-4N`, or `1S-2H-4N`. An **ask template** declares that response
+set once and attaches (**grafts**) it onto any number of different
+attachment points, each resolving `Trump` against its own local `@`.
+
+### Declaring a template: `$.?.Name.`
+
+```
+$.?.RKCB.5C. := (Trumpkcs ?= 1) OR (Trumpkcs ?= 4);
+$.?.RKCB.5D. := (Trumpkcs ?= 0) OR (Trumpkcs ?= 3);
+$.?.RKCB.5H. := (Trumpkcs ?= 2) AND NOT (Trumpq);
+$.?.RKCB.5S. := (Trumpkcs ?= 2) AND (Trumpq);
+```
+
+`?` is a reserved first name segment (parallel to how `$ANY` is already a
+reserved full name) — `RKCB` is the template's name, and everything after
+it (`5C`, `5D`, ...) is a bid token *relative to wherever the template
+ends up attached*, using the same bid-token shape and legality checking as
+an ordinary sequence. A template declaration is consumed entirely during
+preprocessing and never reaches the parser or the convention tree; `Trump`
+inside one has no anchor of its own to resolve against yet (there being no
+real auction path here) — that only happens once it's grafted onto a real
+attachment point, so a template with no `Trump` reference at all (e.g. for
+an ask that isn't trump-relative, like Stayman) is equally fine.
+
+### Attaching a template: `:? Name`
+
+```
+$.1H.3H@.4N.    := (Points>=12) :? RKCB;
+$.1H@.2N.3C.4N. := (Points>=12) :? RKCB;
+$.1S.2H@.4N.    := (Points>=12) :? RKCB;
+```
+
+`:? Name` combines with `:=`/`:&`/`:|` in one statement — the boolean
+condition for taking the call, and which template governs its responses,
+declared together. A standalone `$.Name. :? Template;` means the same as
+`$.Name. := $ANY :? Template;` (any hand that reached this point may ask).
+
+Each attachment grafts concrete `$.<attachment-path>.<relative-token>.`
+rules from the template's entries, resolving `Trump` against **that
+attachment's own** anchor — independently per attachment, so the three
+lines above produce different, correctly-resolved `Hkcs`/`Skcs` text even
+though they share one piece of source. Grafting onto a node that already
+has an explicitly-defined child under the name a template entry would
+produce is a fatal error — a node either takes a template's full response
+set or defines its own children directly, never both.
+
+A response can itself attach a further template, for a follow-up ask:
+
+```
+$.?.RKCB.5H. := (Trumpkcs ?= 2) AND NOT (Trumpq) :? QASK;
+
+$.?.QASK.5N.    := (SlamStillLive);
+$.?.QASK.5N.6C. := NOT (Trumpq);
+$.?.QASK.5N.6D. := (Trumpq);
+```
+
+Once grafted under `$.1H.3H@.4N.5H.`, `QASK`'s own `Trump` references
+still resolve against `3H@` — the anchor established at the *original*
+attachment point, since it's part of every grafted node's full name.
+
+### What's not supported
+
+- No lookup of an ancestor `@` across separate rules, for templates any
+  more than for plain `Trump` references — see "Trump Context" above.
+- `Maj`/`Min` don't fork within a template's own relative bid tokens (no
+  `$.?.Stayman.2Maj.`) — pair `Maj`/`Min` with `Trump`/`:?` at the
+  attachment site instead, which already covers reuse across both majors
+  or both minors.
+- No local children layered on top of a grafted template.
+- No template parameters beyond the implicit Trump anchor.
+
+`bidlab --validate` reports a template that's declared but never attached
+as `UNUSED-TEMPLATE` (a warning, not a load error — counted alongside
+`OVERLAP`/`GAP`/`UNREACHABLE`/`DUPLICATE` in the structure/validation
+summary table).

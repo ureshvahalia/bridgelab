@@ -1,0 +1,5 @@
+## Hand-written Trump usage, no ask-template at all -- confirms @/Trump
+## resolution alone (no grafting involved).
+$.1S.3S@.     := (Points>=12) AND (Trumpl>=4);
+$.1S.3S@.4N.  := (Points>=12) AND (Trumpkcs>=3);
+END

@@ -161,6 +161,52 @@ static int club_len (handBase* ah, int )      { return suit_len (ah, CLUBS); }
 static int get_controls (handBase* ah, int )  { return ah->get_controls(); }
 static int key_cards (handBase* ah, int suit) { return ah->getKeyCards (suit); }
 
+static int
+top_honors (handBase* ah, int suit)
+{
+    int cnt = 0;
+    if (ah->haveCard (ACE   + suit * NCARDS_IN_SUIT)) cnt++;
+    if (ah->haveCard (KING  + suit * NCARDS_IN_SUIT)) cnt++;
+    if (ah->haveCard (QUEEN + suit * NCARDS_IN_SUIT)) cnt++;
+    return cnt;
+}
+
+static int
+suit_controls (handBase* ah, int suit)
+{
+    int ctl = 0;
+    if (ah->haveCard (ACE  + suit * NCARDS_IN_SUIT)) ctl += 2;
+    if (ah->haveCard (KING + suit * NCARDS_IN_SUIT)) ctl += 1;
+    return ctl;
+}
+
+// Support points: HCP plus shortness points in the three non-trump suits,
+// counted only with 3+ card support (enough trumps to ruff safely). At
+// exactly 3 trumps: doubleton/singleton/void = 1/2/3. At 4+ trumps: 1/3/5
+// (the standard "support point" schedule). Built only from getPoints()/
+// suitLen() -- unlike top_honors/suit_controls above (and NLTC below), it
+// never calls haveCard(), so it carries none of their documented
+// partner-hand caveat (haveCard() always returns false for anything that
+// isn't a real dealt hand -- see the NLTC comment below).
+static int
+support_points (handBase* ah, int trump)
+{
+    int pts = ah->getPoints();
+    int trumpLen = ah->suitLen (trump);
+    if (trumpLen >= 3)   {
+        int singletonPts = (trumpLen == 3) ? 2 : 3;
+        int voidPts      = (trumpLen == 3) ? 3 : 5;
+        for (int suit = 0; suit < NSUITS; suit++)
+            if (suit != trump)   {
+                int len = ah->suitLen (suit);
+                if (len == 0)      pts += voidPts;
+                else if (len == 1) pts += singletonPts;
+                else if (len == 2) pts += 1;
+            }
+    }
+    return pts;
+}
+
 // New Losing Trick Count (Koelman 2003 / popularized by Klinger as "NLTC"),
 // doubled to stay integer: missing Ace = 3, missing King = 2, missing Queen
 // = 1 (i.e. 1.5/1.0/0.5 real losers each, x2). Divide by 2 in the rules file
@@ -239,6 +285,9 @@ static const funcDesc suffix_fn_list[] = {
 	{"LEN",      suit_len},
 	{"KCS",      key_cards},
 	{"KEYCARDS", key_cards},
+	{"HON",      top_honors},
+	{"CTL",      suit_controls},
+	{"SUPPORT",  support_points},
 	{0, 0}
 };
 

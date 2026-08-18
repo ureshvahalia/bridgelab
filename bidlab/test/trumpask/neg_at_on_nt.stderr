@@ -1,0 +1,2 @@
+[INFO] Building system trumpask/neg_at_on_nt
+[ERROR] trumpask/neg_at_on_nt.txt: '@' on "1N" in $.1N@.2N. (near line 2) -- '@' must mark a real suit call, not Pass or notrump

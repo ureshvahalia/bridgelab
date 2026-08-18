@@ -1,0 +1,2 @@
+[INFO] Building system trumpask/neg_undeclared_template
+[ERROR] trumpask/neg_undeclared_template.txt: ":? NOSUCHTEMPLATE" (near line 2) references an undeclared ask-template -- no "$.?.NOSUCHTEMPLATE." declaration found

@@ -1,0 +1,27 @@
+[INFO] Building system trumpask/rkcb
+[INFO] Validating system trumpask/rkcb.txt...
+[WARN] [validate] GAP at (opening): 3000/3000 sampled hands (100.0%) match no option, e.g. KQJ2.K8532.KQ9.A - - -
+[WARN] [validate] GAP at 1H: 3000/3000 sampled hands (100.0%) match no option, e.g. T98.T543.QT84.KT - - -
+[WARN] [validate] GAP at 1H-3H: 1992/3000 sampled hands (66.4%) match no option, e.g. T9.742.AK762.T32 - - -
+[WARN] [validate] GAP at 1H-3H-4N: 1/3000 sampled hands (0.0%) match no option, e.g. A65.AK54.AK93.AT - - -
+[WARN] [validate] GAP at 1H-2N: 3000/3000 sampled hands (100.0%) match no option, e.g. Q86.AK97.JT72.J6 - - -
+[WARN] [validate] GAP at 1H-2N-3C: 1948/3000 sampled hands (64.9%) match no option, e.g. J9532.KJ82.Q965. - - -
+[WARN] [validate] GAP at 1H-2N-3C-4N: 1/3000 sampled hands (0.0%) match no option, e.g. AT73.AKQ.AQ2.A85 - - -
+[WARN] [validate] GAP at 1S: 3000/3000 sampled hands (100.0%) match no option, e.g. T532.J.A95.A8762 - - -
+[WARN] [validate] GAP at 1S-2H: 1975/3000 sampled hands (65.8%) match no option, e.g. T84.985.A95.AT95 - - -
+[WARN] [validate] GAP at 1S-2H-4N: 2/3000 sampled hands (0.1%) match no option, e.g. AJ6.AK84.AK873.A - - -
+[INFO] System structure & validation summary:
+[INFO]                             trumpask/rkcb.txt
+[INFO] Opener's rebid (North)                      2
+[INFO] Responder's rebid (South)                   9
+[INFO] Opener's 2nd rebid (North)                  4
+[INFO] Total bid-sequence rules                   15
+[INFO] Hand-property rules                         0
+[INFO] Pure path waypoints                         6
+[INFO] Max auction depth                           5
+[INFO] Decision points                            10
+[INFO] Overlap                                     0
+[INFO] Gap                                        10
+[INFO] Unreachable                                 0
+[INFO] Duplicate-text                              0
+[INFO] Unused templates                            0

@@ -1,0 +1,7 @@
+## RKCB declared but never attached -- should load fine (not fatal) but
+## produce a --validate UNUSED-TEMPLATE warning.
+$.1S.3S@.4N. := (Points>=12);
+
+$.?.RKCB.5C. := (Trumpkcs ?= 1) OR (Trumpkcs ?= 4);
+$.?.RKCB.5D. := (Trumpkcs ?= 0) OR (Trumpkcs ?= 3);
+END

@@ -17,6 +17,7 @@
 #include "pack.hpp"
 #include "translations.h"
 #include "parse_rules.h"
+#include "trumpAskExpand.hpp"
 #include "log.h"
 extern "C" void print_time_estimate (time_t, time_t);
 #include "bidderDeal.hpp"
@@ -45,6 +46,32 @@ static bool rulesOnlyMode = false;   // --rules-only: stop at the first unmatche
 static bool validateMode  = false;   // --validate: check a system's rule tree for overlaps/gaps/dead rules, don't deal
 static bool selfTestMode  = false;   // --self-test: check combineRule()/negateRule()'s own NULL handling, no rules file needed
 static bool statsMode     = false;   // --stats: print runtime (dynamic) stats gathered during a normal run -- static/structural stats print unconditionally with --validate instead
+
+// --nrules N[,N2,...]: cap how many rule-decisions (nextBid() calls that
+// found/could-find a matching rule) fire before forcing a suggestContract()
+// guess, so a run can compare bidding depth vs. guess quality on the same
+// deals. -1 means "unlimited" (today's default behavior). Each value in the
+// list produces its own set of output columns per system -- see main()'s
+// "runs" (system x nrules-value pairs) below.
+static std::vector<int> nrulesList;
+
+static void
+parseNrulesList (const char* arg)
+{
+    char buf[LINE_LENGTH];
+    snprintf (buf, sizeof (buf), "%s", arg);
+    char* tok = strtok (buf, ",");
+    while (tok != NULL)    {
+        char* end;
+        long v = strtol (tok, &end, 10);
+        if ((end == tok) || (*end != 0) || (v < 0))    {
+            logError ("Invalid --nrules value '%s' (expected a non-negative integer)\n", tok);
+            exit (1);
+        }
+        nrulesList.push_back ((int)v);
+        tok = strtok (NULL, ",");
+    }
+}
 
 class funcStats {
     char    name[MAXNAMELEN];
@@ -167,6 +194,16 @@ class convention    {
     convention* sibling;
   public:
     void*       rule;
+    // Precomputed by precomputeSiblingNegations(), once, after the whole
+    // tree is built -- see its own comment for why this can't be done
+    // incrementally during tree construction. negatedEarlierSiblings is
+    // this node's own contribution when findMatchingChild() selects it (AND
+    // of NOT(rule) for every earlier sibling under the same parent, skipping
+    // waypoints); negatedAllChildren is a parent's contribution when NONE of
+    // its children match (AND of NOT(rule) for all of them). NULL until
+    // precomputeSiblingNegations() runs, same as any other "no constraint".
+    void*       negatedEarlierSiblings;
+    void*       negatedAllChildren;
     convention (convention* parent, bid inb, void* r);
     convention* firstChild()    { return child; }
     convention* nextSibling()   { return sibling; }
@@ -175,7 +212,8 @@ class convention    {
 };
 
 convention::convention (convention* parent, bid inb, void* r)
-    : b(inb), child(NULL), sibling(NULL), rule(r)
+    : b(inb), child(NULL), sibling(NULL), rule(r),
+      negatedEarlierSiblings(NULL), negatedAllChildren(NULL)
 {
     if (!parent)
         return;
@@ -187,6 +225,49 @@ convention::convention (convention* parent, bid inb, void* r)
             c = c->nextSibling();
         c->sibling = this;
     }
+}
+
+// Precomputes negatedEarlierSiblings/negatedAllChildren (see convention's
+// own comment) for every node in the tree rooted at `node`, once, so
+// findMatchingChild() never has to rebuild the same negation from scratch
+// on every deal that reaches the same decision point -- see the "Precompute
+// negative-inference" work item for the full rationale and the measured
+// cost this removes.
+//
+// Must run as ONE pass over the *fully-built* tree -- after every rule in
+// the file has been processed, not incrementally as each node is inserted.
+// biddingSystem::processRule() can create a node as a waypoint (rule==NULL,
+// existing only as a path prefix for a deeper rule) while processing one
+// rule, and a *later* rule in the same file can retroactively set that same
+// node's `rule` via direct field assignment if its own bid sequence happens
+// to terminate there (e.g. "$.1N.2C.2H." processed before "$.1N.2C.", both
+// sharing the "1N.2C" node). Computing a sibling's negation at insertion
+// time would capture that node's rule as it stood *then* -- NULL, skipped
+// -- not its final value. Running this only after the whole file is parsed
+// means every node's rule is already settled, so no such staleness is
+// possible.
+//
+// Called once per system, from biddingSystem's constructor, before any
+// deal is dealt and before the per-deal tnodeArenaBegin()/End() bracket
+// exists yet -- so the make_leaf() calls inside combineRule()/negateRule()
+// here fall back to plain malloc() (arena inactive), making every node this
+// builds permanent/process-lifetime for free, exactly like the rest of the
+// parsed rule tree. Deliberately eager rather than lazy/memoized-on-first-
+// use for this reason: computing it lazily would happen from inside the
+// per-deal loop, where the arena *is* active, and would need a new
+// mechanism to force permanent allocation there instead of reusing this
+// already-safe window.
+static void
+precomputeSiblingNegations (convention* node)
+{
+    void* acc = NULL;
+    for (convention* c = node->firstChild (); c != NULL; c = c->nextSibling ())    {
+        c->negatedEarlierSiblings = acc;
+        if (c->getRule () != NULL)
+            acc = combineRule (acc, negateRule (c->getRule ()));
+        precomputeSiblingNegations (c);
+    }
+    node->negatedAllChildren = acc;
 }
 
 // A match, plus `acc` (the caller's starting accumulator) folded together
@@ -229,6 +310,15 @@ struct matchResult {
 // `acc` -- callers combine that separately, same as before this function
 // returned an accumulator at all.
 //
+// The negation itself is not rebuilt here -- negatedEarlierSiblings/
+// negatedAllChildren are precomputed once per tree by
+// precomputeSiblingNegations() (see its own comment), since which siblings
+// get negated for a given match is entirely a function of tree structure,
+// never of the specific hand. This turns what used to be up to K
+// combineRule()/negateRule() calls (K = position of the match among its
+// siblings, redone from scratch on every deal that reaches this decision)
+// into exactly one.
+//
 // Shared by the live auction (nextBid()) and --validate's offline tree
 // walk, so the two can never disagree about what "reachable"/"matches" mean.
 static matchResult
@@ -239,18 +329,18 @@ findMatchingChild (convention* node, convention* rootSysp, bool allPassSoFar, ha
         if (rule == NULL)
             continue;
         if (hand.checkHand (rule))
-            return { s, acc };
-        acc = combineRule (acc, negateRule (rule));
+            return { s, combineRule (acc, s->negatedEarlierSiblings) };
     }
+    acc = combineRule (acc, node->negatedAllChildren);
     if (allPassSoFar && (node != rootSysp))    {
         for (convention* s = rootSysp->firstChild (); s != NULL; s = s->nextSibling ()) {
             void* rule = s->getRule ();
             if (rule == NULL)
                 continue;
             if (hand.checkHand (rule))
-                return { s, acc };
-            acc = combineRule (acc, negateRule (rule));
+                return { s, combineRule (acc, s->negatedEarlierSiblings) };
         }
+        acc = combineRule (acc, rootSysp->negatedAllChildren);
     }
     return { NULL, acc };
 }
@@ -304,12 +394,20 @@ class biddingSystem : public convention
 {
     void* ruleList;
     char name[MAXNAMELEN];
+    // Snapshot of unusedAskTemplateNames() taken right after this system's
+    // own read_rules() call -- graftAskTemplates() reports are keyed to
+    // "the file most recently processed", so with multiple -i systems this
+    // must be captured per-system at load time, not re-read later from
+    // validateSystem() (by then every system has already loaded, and the
+    // global would only reflect the last one).
+    std::vector<std::string> unusedTemplates;
   public:
     biddingSystem (char* fileName);
     bool isValid()                  { return (ruleList != NULL); }
     void* findRule (const char* ruleName) { return find_rule (ruleList, ruleName); }
     void processRule (void* rule);
     int  countHandPropertyRules ();
+    const std::vector<std::string>& getUnusedTemplates ()  { return unusedTemplates; }
 };
 
 // Hand-property ("$Name := ...", not "$.<bid>...") rules -- e.g. $balanced,
@@ -343,9 +441,11 @@ biddingSystem::biddingSystem (char* fileName)
         strcpy (name, fileName);
     logInfo ("Building system %s\n", name);
     ruleList = read_rules (fileName);
+    unusedTemplates = unusedAskTemplateNames ();
     if (ruleList != NULL)   {
         for (void* rule = ruleList; rule !=NULL; rule = next_rule (rule))
             processRule (rule);
+        precomputeSiblingNegations (this);   // whole tree now built -- see its own comment for why not sooner
     }
 }
 
@@ -472,6 +572,7 @@ class auction  {
     bool        guessWasCalled;    // true once we've reached the "no matching rule" branch
     int         roundNum;          // for --stats: which bid nextBid() is deciding, 1 = opening bid
     int         curSysIndex;       // for --stats: which system this bidHand() call is for
+    int         nrulesLimit;       // --nrules: force a guess once roundNum exceeds this (-1 = unlimited)
     int         whoseTurn;
     handScores  totScores;
     bid         maxBid;
@@ -498,7 +599,7 @@ class auction  {
     // Creates a deal from pbnStr. If pbnStr is NULL, creates random deal matching the rules
     // Saves North and South hands in hands array
     // Analyzes the deal to identify single dummy par results for each contract and saves in totScores
-    void    bidHand (systemp sp, int sysIndex);
+    void    bidHand (systemp sp, int sysIndex, int nrulesLimit);
     void    outputResults (int sysIndex);
     static void writeHeaders (systemNamep* systemNames);
     static void writeSummary (systemNamep* systemNames);
@@ -548,12 +649,13 @@ auction::initializeBidding ()
 }
 
 void
-auction::bidHand (systemp sp, int sysIndex)
+auction::bidHand (systemp sp, int sysIndex, int nrulesLimitArg)
 {
     initializeBidding ();
     sysp = sp;
     rootSysp = sp;
     curSysIndex = sysIndex;
+    nrulesLimit = nrulesLimitArg;
     rules[bidder] = rules[nextBidder()] = sp->findRule ("$ANY");   // reset to no info
 
     while (nextBid ())
@@ -570,8 +672,14 @@ auction::nextBid ()
         bidVal = considerOverride ();
     else    {
         roundNum++;
-        matchResult mr = findMatchingChild (sysp, rootSysp, allPassSoFar, hands[bidder], rules[bidder]);
-        convention* s = mr.match;
+        matchResult mr;
+        convention* s;
+        if ((nrulesLimit >= 0) && (roundNum > nrulesLimit))
+            s = NULL;   // --nrules cutoff reached: force a guess even if a rule would have matched
+        else    {
+            mr = findMatchingChild (sysp, rootSysp, allPassSoFar, hands[bidder], rules[bidder]);
+            s = mr.match;
+        }
         // Rule-coverage bookkeeping for --stats (see printRuleCoverageTable()):
         // grow this system's per-round vector as needed, then tally which
         // branch below decided this bid -- rule match or suggestContract()
@@ -649,6 +757,7 @@ auction::writeDetails (FILE* dh, bool bothHands, handScores* hsp, const char* sc
 }
 
 static int numSystems;
+static int numRuns;    // numSystems * nrulesList.size() -- one output column-group per (system, nrules value) pair
 static FILE* oh;
 static FILE* bboFp           = NULL;
 static int   boardNum        = 0;   // 1-based; counts successfully-created deals
@@ -707,7 +816,7 @@ auction::writeHeaders (systemNamep* systemNames)
                  "S Pts,S Ctls,S KC S,S KC H,S KC D,S KC C,S S,S H,S D,S C,S pattern,S shape,");
     if (!rulesOnlyMode)
         fprintf (oh, "Par Bid,Par Score,");
-    for (systemNamep* snpp = systemNames; snpp < systemNames + numSystems; snpp++)   {
+    for (systemNamep* snpp = systemNames; snpp < systemNames + numRuns; snpp++)   {
         if (rulesOnlyMode)
             fprintf (oh, "Auction %s,", *snpp);
         else
@@ -727,7 +836,7 @@ void
 auction::writeSummary (systemNamep* systemNames)
 {
     systemNamep* snpp = systemNames;
-    for (int sysIndex = 0; sysIndex < numSystems; sysIndex++, snpp++)   {
+    for (int sysIndex = 0; sysIndex < numRuns; sysIndex++, snpp++)   {
         double avgImps = boardsScored ? ((double)impSum[sysIndex] / boardsScored) : 0.0;
         double parPct  = boardsScored ? (100.0 * parMatches[sysIndex] / boardsScored) : 0.0;
         logInfo ("System %s: average IMPs vs par = %.2f, bid par contract %d/%d (%.1f%%)\n",
@@ -832,7 +941,7 @@ fmtCoverage (int matched, int total)
 static void
 printRuleCoverageTable (systemNamep* systemNames)
 {
-    int n = numSystems;
+    int n = numRuns;
     size_t maxRounds = 0;
     for (int s = 0; s < n; s++)
         if (matchedByRound[s].size () > maxRounds)
@@ -1083,6 +1192,7 @@ struct validateStats {
     int waypoints;   // depth>0 nodes with no rule of their own (pure path prefixes)
     int maxDepth;    // deepest node visited, whether or not it has a rule
     int handPropertyRules;   // set separately, after the walk -- see validateSystem()
+    int unusedTemplates;     // ask-templates declared ($.?.Name....) but never attached (:?)
 };
 
 static void
@@ -1257,6 +1367,11 @@ validateSystem (biddingSystem* sys, const char* sysName)
     logInfo ("Validating system %s...\n", sysName);
     walkValidate (sys, sys, 0, anyRule, anyRule, true, "", &stats);
     stats.handPropertyRules = sys->countHandPropertyRules ();
+    for (const std::string& name : sys->getUnusedTemplates ())   {
+        logWarning ("[validate] UNUSED-TEMPLATE: %s declared (\"$.?.%s....\") but never attached (\":?\")\n",
+                    name.c_str (), name.c_str ());
+        stats.unusedTemplates++;
+    }
     return stats;
 }
 
@@ -1326,6 +1441,7 @@ printStatsTable (systemNamep* systemNames, const std::vector<validateStats>& all
         { "Gap",                 &validateStats::gaps },
         { "Unreachable",         &validateStats::unreachable },
         { "Duplicate-text",      &validateStats::duplicates },
+        { "Unused templates",    &validateStats::unusedTemplates },
     };
     for (auto& f : simpleFields)   {
         TableRow row;
@@ -1584,6 +1700,11 @@ main (int argc, char** argv)
             i += 2;
             continue;
         }
+        if (strcmp (argv[i], "--nrules") == 0)    {
+            parseNrulesList (argv[i + 1]);
+            i += 2;
+            continue;
+        }
         if (strcmp (argv[i], "-P") == 0)    {
             partnerRuleName = argv[i + 1];
             i += 2;
@@ -1618,6 +1739,8 @@ main (int argc, char** argv)
             continue;
         }
     }
+    if (nrulesList.empty ())
+        nrulesList.push_back (-1);   // no --nrules given: unlimited, single run (today's behavior)
     if (selfTestMode)   {
         bool ok = runSelfTest ();
         ok = runSimplifyTests () && ok;
@@ -1694,10 +1817,41 @@ main (int argc, char** argv)
         return 0;
     }
 
-    impSum = new int[numSystems]();
-    parMatches = new int[numSystems]();
-    matchedByRound.resize (numSystems);
-    guessedByRound.resize (numSystems);
+    // Build the flat list of "runs" -- one per (system, --nrules value) pair,
+    // system-major so a single system's nrules progression reads left to
+    // right in the output. With a single (default, unlimited) --nrules
+    // value this collapses to exactly one run per system, same as before
+    // --nrules existed, so column names are left unchanged in that case.
+    numRuns = numSystems * (int)nrulesList.size ();
+    bool multiNrules = nrulesList.size () > 1;
+    std::vector<std::string> runNameStrings (numRuns);
+    std::vector<int> runSysIndex (numRuns);
+    std::vector<int> runNrulesLimit (numRuns);
+    {
+        int idx = 0;
+        for (int sysI = 0; sysI < numSystems; sysI++)
+            for (size_t ni = 0; ni < nrulesList.size (); ni++, idx++)   {
+                runSysIndex[idx] = sysI;
+                runNrulesLimit[idx] = nrulesList[ni];
+                if (multiNrules)   {
+                    char buf[MAXNAMELEN];
+                    if (nrulesList[ni] < 0)
+                        snprintf (buf, sizeof (buf), "%s (nrules=all)", systemNames[sysI]);
+                    else
+                        snprintf (buf, sizeof (buf), "%s (nrules=%d)", systemNames[sysI], nrulesList[ni]);
+                    runNameStrings[idx] = buf;
+                } else
+                    runNameStrings[idx] = systemNames[sysI];
+            }
+    }
+    systemNamep* runNames = new systemNamep[numRuns];
+    for (int k = 0; k < numRuns; k++)
+        runNames[k] = const_cast<char*> (runNameStrings[k].c_str ());
+
+    impSum = new int[numRuns]();
+    parMatches = new int[numRuns]();
+    matchedByRound.resize (numRuns);
+    guessedByRound.resize (numRuns);
 
     if (partnerRuleName) {
         char prBuf[MAXNAMELEN];
@@ -1740,7 +1894,7 @@ main (int argc, char** argv)
     }
 
 	logInfo ("Starting deal generation\n");
-    auction::writeHeaders (systemNames);
+    auction::writeHeaders (runNames);
     time_t t0 = time(0);
     int repsDone = 0;
     time_t t1;
@@ -1763,8 +1917,8 @@ main (int argc, char** argv)
             auction a (rulep);
             (void)a.createDeal (NULL);
             boardsScored++;
-            for (snum = 0; snum < numSystems; snum++)
-                a.bidHand (systemsList[snum], snum);
+            for (snum = 0; snum < numRuns; snum++)
+                a.bidHand (systemsList[runSysIndex[snum]], snum, runNrulesLimit[snum]);
             tnodeArenaEnd ();
             t1 = time (0) - t0;
             --reps;
@@ -1786,8 +1940,8 @@ main (int argc, char** argv)
             auction a (rulep);
             if (a.createDeal (pbnDeal))   {
                 boardsScored++;
-                for (snum = 0; snum < numSystems; snum++)
-                    a.bidHand (systemsList[snum], snum);
+                for (snum = 0; snum < numRuns; snum++)
+                    a.bidHand (systemsList[runSysIndex[snum]], snum, runNrulesLimit[snum]);
                 tnodeArenaEnd ();
                 t1 = time (0) - t0;
                 ++repsDone;
@@ -1804,9 +1958,9 @@ main (int argc, char** argv)
 	}
     logInfo ("bidHand took %lld seconds\n", (long long)(time(0) - t0));
     if (!rulesOnlyMode)
-        auction::writeSummary (systemNames);
+        auction::writeSummary (runNames);
     if (statsMode)
-        printRuleCoverageTable (systemNames);
+        printRuleCoverageTable (runNames);
     funcStats::printAll ();
     fclose (oh);
     if (bboFp)

@@ -1,0 +1,2 @@
+[INFO] Building system trumpask/neg_template_conflict
+[ERROR] trumpask/neg_template_conflict.txt: ask-template RKCB attached at $.1S.3S@.4N. (near line 3) would define $.1S.3S@.4N.5C., but that rule already has an explicit definition -- a node may not mix an attached template with locally-defined children

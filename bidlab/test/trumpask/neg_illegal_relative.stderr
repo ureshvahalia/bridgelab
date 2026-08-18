@@ -1,0 +1,2 @@
+[INFO] Building system trumpask/neg_illegal_relative
+[ERROR] trumpask/neg_illegal_relative.txt: ask-template BAD's relative sequence "5N.4C" (near line 3) is not a legally-ranked bid sequence

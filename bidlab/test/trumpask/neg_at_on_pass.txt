@@ -1,0 +1,3 @@
+## @ on Pass -- no suit to resolve Trump against; must be fatal.
+$.1S.P@. := (Points<6);
+END

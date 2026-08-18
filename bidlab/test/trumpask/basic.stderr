@@ -1,0 +1,19 @@
+[INFO] Building system trumpask/basic
+[INFO] Validating system trumpask/basic.txt...
+[WARN] [validate] GAP at (opening): 3000/3000 sampled hands (100.0%) match no option, e.g. KQJ2.K8532.KQ9.A - - -
+[WARN] [validate] GAP at 1S: 2556/3000 sampled hands (85.2%) match no option, e.g. T98.T543.QT84.KT - - -
+[WARN] [validate] GAP at 1S-3S: 2735/3000 sampled hands (91.2%) match no option, e.g. K.KT872.KQT83.J7 - - -
+[INFO] System structure & validation summary:
+[INFO]                           trumpask/basic.txt
+[INFO] Responses (South)                          1
+[INFO] Opener's rebid (North)                     1
+[INFO] Total bid-sequence rules                   2
+[INFO] Hand-property rules                        0
+[INFO] Pure path waypoints                        1
+[INFO] Max auction depth                          3
+[INFO] Decision points                            3
+[INFO] Overlap                                    0
+[INFO] Gap                                        3
+[INFO] Unreachable                                0
+[INFO] Duplicate-text                             0
+[INFO] Unused templates                           0

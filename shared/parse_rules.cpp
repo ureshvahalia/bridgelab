@@ -3,6 +3,7 @@
 #include "tnode.h"
 #include "parse_rules.h"
 #include "majMinExpand.hpp"
+#include "trumpAskExpand.hpp"
 #include "log.h"
 
 extern int   yyparse ();
@@ -33,6 +34,8 @@ read_rules (const char* inFile)
     fclose (fp);
 
     std::string expandedText = expandMajMinMacros (rawText, inFile);
+    expandedText = graftAskTemplates (expandedText, inFile);
+    expandedText = resolveTrumpReferences (expandedText, inFile);
 
     defroot = NULL;
     yylineno = 1;

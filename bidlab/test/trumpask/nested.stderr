@@ -1,0 +1,23 @@
+[INFO] Building system trumpask/nested
+[INFO] Validating system trumpask/nested.txt...
+[WARN] [validate] GAP at (opening): 3000/3000 sampled hands (100.0%) match no option, e.g. KQJ2.K8532.KQ9.A - - -
+[WARN] [validate] GAP at 1S: 3000/3000 sampled hands (100.0%) match no option, e.g. T98.T543.QT84.KT - - -
+[WARN] [validate] GAP at 1S-3S: 1992/3000 sampled hands (66.4%) match no option, e.g. T9.742.AK762.T32 - - -
+[WARN] [validate] GAP at 1S-3S-4N: 2/3000 sampled hands (0.1%) match no option, e.g. AKT853.AJ.AQ8.AQ - - -
+[WARN] [validate] GAP at 1S-3S-4N-5H: 1788/3000 sampled hands (59.6%) match no option, e.g. AK943.A.T8652.Q8 - - -
+[INFO] System structure & validation summary:
+[INFO]                                trumpask/nested.txt
+[INFO] Opener's rebid (North)                           1
+[INFO] Responder's rebid (South)                        4
+[INFO] Opener's 2nd rebid (North)                       1
+[INFO] Responder's 2nd rebid (South)                    2
+[INFO] Total bid-sequence rules                         8
+[INFO] Hand-property rules                              0
+[INFO] Pure path waypoints                              2
+[INFO] Max auction depth                                6
+[INFO] Decision points                                  6
+[INFO] Overlap                                          0
+[INFO] Gap                                              5
+[INFO] Unreachable                                      0
+[INFO] Duplicate-text                                   0
+[INFO] Unused templates                                 0

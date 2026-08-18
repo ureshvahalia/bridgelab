@@ -1,0 +1,2 @@
+[INFO] Building system trumpask/neg_no_anchor
+[ERROR] trumpask/neg_no_anchor.txt: "Trump" referenced in $.1S.3S.4N. (near line 2) but no '@' establishes Trump anywhere in this rule's own name

@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/bin/msys2/Debug/bidlab.exe",
             // "args": [ "-v", "details.csv", "-p", "StrongNT_pbn.csv" ],
-            "args": [ "-i", "input/bws_input.txt,input/camel_spec.txt,input/UreshJay.txt", "-o", "output/results.csv", "--stats","-P", "HopeUnobstructed", "-nchecks", "32", "1000", "Any", "Any" ],
+            "args": [ "-i", "input/UreshJay.txt,input/camel_spec.txt", "-o", "output/results.csv", "--stats","-P", "HopeUnobstructed", "-nchecks", "64", "20000", "Any", "Any" ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

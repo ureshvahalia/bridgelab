@@ -508,6 +508,36 @@ do
     fi
 done
 
+# Regression check for the retroactive-waypoint-mutation trap in
+# precomputeSiblingNegations() (bidlab.cpp): a node first created as a
+# waypoint, whose rule gets set retroactively by a later statement sharing
+# its prefix, must still be correctly negated by siblings that were
+# inserted into the tree before that retroactive mutation happened -- see
+# validate/retroactive_sibling.txt's own header comment for the full setup.
+"$BIDDER" -s 0 -i validate/retroactive_sibling.txt --validate >validate/retroactive_sibling.stdout 2>validate/retroactive_sibling.stderr
+RETROSIB_EXIT=$?
+if [ "$RETROSIB_EXIT" -ne 0 ]; then
+    echo "validate regression test FAILED: retroactive_sibling.txt --validate should exit 0, got $RETROSIB_EXIT"
+    VALIDATE_OK=0
+fi
+if ! grep -qF 'GAP at 1N-2D-2H: 3000/3000 sampled hands (100.0%) match no option' validate/retroactive_sibling.stderr; then
+    echo "validate regression test FAILED: retroactive_sibling.txt did not report a deterministic 100.0% GAP at 1N-2D-2H:"
+    cat validate/retroactive_sibling.stderr
+    VALIDATE_OK=0
+fi
+for expected in \
+    'Decision points[[:space:]]+5$' \
+    'Overlap[[:space:]]+1$' \
+    'Gap[[:space:]]+5$' \
+    'Unreachable[[:space:]]+0$'
+do
+    if ! grep -qE "$expected" validate/retroactive_sibling.stderr; then
+        echo "validate regression test FAILED: retroactive_sibling.txt structure table did not report: $expected"
+        cat validate/retroactive_sibling.stderr
+        VALIDATE_OK=0
+    fi
+done
+
 if [ "$VALIDATE_OK" -eq 1 ]; then
     echo "validate regression test PASSED"
 else
@@ -573,6 +603,131 @@ fi
 
 if [ "$STATS_OK" -eq 1 ]; then
     echo "stats regression test PASSED"
+else
+    exit 1
+fi
+
+# ── Trump context / ask-templates (@, Trump<suffix>, $.?.Name., :?) ───────────
+# See trumpask/. rkcb.txt: RKCB reachable via three differently-shaped
+# auctions, each setting Trump at a different point, with the responses
+# declared once in a $.?.RKCB. ask-template and grafted onto each
+# attachment -- confirms grafting resolves Trump independently and
+# correctly per attachment point. nested.txt: a grafted response itself
+# attaches a further template (QASK), confirming multi-level grafting and
+# that Trump still resolves through a grafted-under-a-grafted node.
+# basic.txt: hand-written @/Trump with no template at all. Each neg_*.txt
+# is expected to fail to load (nonzero exit) with a specific error.
+TRUMPASK_OK=1
+
+"$BIDDER" -s 0 -i trumpask/rkcb.txt --validate >trumpask/rkcb.stdout 2>trumpask/rkcb.stderr
+RKCB_EXIT=$?
+if [ "$RKCB_EXIT" -ne 0 ]; then
+    echo "trumpask regression test FAILED: rkcb.txt --validate should exit 0, got $RKCB_EXIT"
+    cat trumpask/rkcb.stderr
+    TRUMPASK_OK=0
+fi
+if grep -q 'UNREACHABLE' trumpask/rkcb.stderr; then
+    echo "trumpask regression test FAILED: rkcb.txt --validate reported UNREACHABLE:"
+    cat trumpask/rkcb.stderr
+    TRUMPASK_OK=0
+fi
+for expected in \
+    'Total bid-sequence rules[[:space:]]+15$' \
+    'Max auction depth[[:space:]]+5$' \
+    'Decision points[[:space:]]+10$' \
+    'Overlap[[:space:]]+0$' \
+    'Unreachable[[:space:]]+0$' \
+    'Unused templates[[:space:]]+0$'
+do
+    if ! grep -qE "$expected" trumpask/rkcb.stderr; then
+        echo "trumpask regression test FAILED: rkcb.txt structure table did not report: $expected"
+        cat trumpask/rkcb.stderr
+        TRUMPASK_OK=0
+    fi
+done
+
+"$BIDDER" -s 0 -i trumpask/basic.txt --validate >trumpask/basic.stdout 2>trumpask/basic.stderr
+BASIC_EXIT=$?
+if [ "$BASIC_EXIT" -ne 0 ]; then
+    echo "trumpask regression test FAILED: basic.txt --validate should exit 0, got $BASIC_EXIT"
+    cat trumpask/basic.stderr
+    TRUMPASK_OK=0
+fi
+if ! grep -qE 'Total bid-sequence rules[[:space:]]+2$' trumpask/basic.stderr; then
+    echo "trumpask regression test FAILED: basic.txt structure table did not report 2 bid-sequence rules"
+    cat trumpask/basic.stderr
+    TRUMPASK_OK=0
+fi
+
+"$BIDDER" -s 0 -i trumpask/nested.txt --validate >trumpask/nested.stdout 2>trumpask/nested.stderr
+NESTED_EXIT=$?
+if [ "$NESTED_EXIT" -ne 0 ]; then
+    echo "trumpask regression test FAILED: nested.txt --validate should exit 0, got $NESTED_EXIT"
+    cat trumpask/nested.stderr
+    TRUMPASK_OK=0
+fi
+for expected in \
+    'Total bid-sequence rules[[:space:]]+8$' \
+    'Max auction depth[[:space:]]+6$' \
+    'Decision points[[:space:]]+6$' \
+    'Overlap[[:space:]]+0$' \
+    'Unreachable[[:space:]]+0$'
+do
+    if ! grep -qE "$expected" trumpask/nested.stderr; then
+        echo "trumpask regression test FAILED: nested.txt structure table did not report: $expected"
+        cat trumpask/nested.stderr
+        TRUMPASK_OK=0
+    fi
+done
+
+"$BIDDER" -s 0 -i trumpask/unused_template.txt --validate >trumpask/unused_template.stdout 2>trumpask/unused_template.stderr
+UNUSED_EXIT=$?
+if [ "$UNUSED_EXIT" -ne 0 ]; then
+    echo "trumpask regression test FAILED: unused_template.txt --validate should exit 0, got $UNUSED_EXIT"
+    cat trumpask/unused_template.stderr
+    TRUMPASK_OK=0
+fi
+if ! grep -qF 'UNUSED-TEMPLATE: RKCB declared' trumpask/unused_template.stderr; then
+    echo "trumpask regression test FAILED: unused_template.txt did not report UNUSED-TEMPLATE for RKCB"
+    cat trumpask/unused_template.stderr
+    TRUMPASK_OK=0
+fi
+if ! grep -qE 'Unused templates[[:space:]]+1$' trumpask/unused_template.stderr; then
+    echo "trumpask regression test FAILED: unused_template.txt structure table did not report 1 unused template"
+    cat trumpask/unused_template.stderr
+    TRUMPASK_OK=0
+fi
+
+# Each of these must be rejected at load time (nonzero exit) with the
+# specific, distinguishing error message named alongside it.
+NEG_CASES="neg_no_anchor:no '@' establishes Trump
+neg_at_on_nt:must mark a real suit call, not Pass or notrump
+neg_at_on_pass:must mark a real suit call, not Pass or notrump
+neg_undeclared_template:references an undeclared ask-template
+neg_template_conflict:already has an explicit definition
+neg_dup_relative:declares \"5C\" more than once
+neg_illegal_relative:is not a legally-ranked bid sequence"
+
+echo "$NEG_CASES" | while IFS=: read -r fname expectedmsg; do
+    negexit=0
+    "$BIDDER" -s 0 -i "trumpask/$fname.txt" --validate >"trumpask/$fname.stdout" 2>"trumpask/$fname.stderr" || negexit=$?
+    if [ "$negexit" -eq 0 ]; then
+        echo "trumpask regression test FAILED: $fname.txt should be rejected at load time (got exit 0)"
+        touch trumpask/.neg_failed
+    fi
+    if ! grep -qF "$expectedmsg" "trumpask/$fname.stderr"; then
+        echo "trumpask regression test FAILED: $fname.txt did not report: $expectedmsg"
+        cat "trumpask/$fname.stderr"
+        touch trumpask/.neg_failed
+    fi
+done
+if [ -f trumpask/.neg_failed ]; then
+    rm -f trumpask/.neg_failed
+    TRUMPASK_OK=0
+fi
+
+if [ "$TRUMPASK_OK" -eq 1 ]; then
+    echo "trumpask regression test PASSED"
 else
     exit 1
 fi

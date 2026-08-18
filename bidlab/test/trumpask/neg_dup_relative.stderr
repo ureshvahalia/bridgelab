@@ -1,0 +1,2 @@
+[INFO] Building system trumpask/neg_dup_relative
+[ERROR] trumpask/neg_dup_relative.txt: ask-template RKCB declares "5C" more than once (near line 3)

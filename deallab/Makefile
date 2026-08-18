@@ -107,7 +107,8 @@ OBJS = \
     $(OBJ_DIR)/parse_rules.o \
     $(OBJ_DIR)/simplify.o \
     $(OBJ_DIR)/tnode.o \
-    $(OBJ_DIR)/translations.o
+    $(OBJ_DIR)/translations.o \
+    $(OBJ_DIR)/trumpAskExpand.o
 
 DEPS = $(OBJS:.o=.d)
 

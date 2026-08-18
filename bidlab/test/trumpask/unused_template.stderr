@@ -1,0 +1,19 @@
+[INFO] Building system trumpask/unused_template
+[INFO] Validating system trumpask/unused_template.txt...
+[WARN] [validate] GAP at (opening): 3000/3000 sampled hands (100.0%) match no option, e.g. KQJ2.K8532.KQ9.A - - -
+[WARN] [validate] GAP at 1S: 3000/3000 sampled hands (100.0%) match no option, e.g. T98.T543.QT84.KT - - -
+[WARN] [validate] GAP at 1S-3S: 1992/3000 sampled hands (66.4%) match no option, e.g. T9.742.AK762.T32 - - -
+[WARN] [validate] UNUSED-TEMPLATE: RKCB declared ("$.?.RKCB....") but never attached (":?")
+[INFO] System structure & validation summary:
+[INFO]                           trumpask/unused_template.txt
+[INFO] Opener's rebid (North)                               1
+[INFO] Total bid-sequence rules                             1
+[INFO] Hand-property rules                                  0
+[INFO] Pure path waypoints                                  2
+[INFO] Max auction depth                                    3
+[INFO] Decision points                                      3
+[INFO] Overlap                                              0
+[INFO] Gap                                                  3
+[INFO] Unreachable                                          0
+[INFO] Duplicate-text                                       0
+[INFO] Unused templates                                     1

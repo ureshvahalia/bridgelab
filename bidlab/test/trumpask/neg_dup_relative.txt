@@ -1,0 +1,4 @@
+## Same relative sequence declared twice within one ask-template -- must be fatal.
+$.?.RKCB.5C. := (Trumpkcs ?= 1);
+$.?.RKCB.5C. := (Trumpkcs ?= 4);
+END

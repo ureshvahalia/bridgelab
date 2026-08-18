@@ -32,6 +32,7 @@ bidlab [options] reps [RuleN [RuleE [RuleS [RuleW]]]]
 | `--validate` | Check each `-i` system's rule tree offline for authoring mistakes instead of dealing/bidding — see [System Validation](#system-validation---validate-mode) below. Also always prints static/structural system stats (bid counts by round, etc. — see [System Stats](#system-stats) below); this isn't gated by a flag, since it's a byproduct of the same tree walk. No `reps`/rule args, `-o`, `-b`, `-v`, or `-nchecks` are needed; the run never reaches deal generation. |
 | `--self-test` | Exercise `combineRule()`/`negateRule()`'s `NULL`-handling directly and exit — no `-i`, no rules file, no dealing. Prints `[self-test] PASSED` and exits 0, or logs the specific failing assertion and exits 1. Exists because, with `$ANY` now built-in (see `hand-spec.md`), no live code path calls these with a `NULL` operand anymore, so nothing else in a normal run exercises that handling. |
 | `--stats` | Print dynamic (runtime) system stats at the end of a normal run — currently rule coverage by round (how often `nextBid()` matched a rule vs. fell through to `suggestContract()`'s guess). See [System Stats](#system-stats) below. Off by default; unlike the static stats above, this is real per-run behavior, not free structural data, so it's opt-in. Works with `--rules-only` (and is often paired with it, since rule coverage alone doesn't need the simulation `--rules-only` skips). |
+| `--nrules N[,N2,...]` | Cap how many rule-decisions (`nextBid()` calls, 1 = opening bid, 2 = response, 3 = opener's rebid, ...) fire before forcing the auction to stop, even if a rule would otherwise have matched further on. `0` means no rules are consulted at all — an immediate cutoff before the opening bid. With `--rules-only`, the auction simply stops at the cutoff (or at the first genuine gap, whichever comes first) with no simulation, same as `--rules-only` alone; without it, `suggestContract()`'s guess-and-simulate step runs at the cutoff point, using whatever the seat's accumulated rule was through the rounds actually played. A comma-separated list runs the same deals through every listed cutoff, letting you see how much each additional round of real bidding improves the resulting contract. Each `(system, nrules value)` pair gets its own set of `Auction`/`Bidding`/`Contract`/`Score`/`IMPs vs Par` output columns, system-major then nrules-minor (so one system's progression reads left to right); column names gain a `(nrules=N)` suffix only when more than one `--nrules` value is given — a single value (or the option omitted entirely, meaning unlimited) leaves column names exactly as without `--nrules`. Default: unlimited (today's behavior — an auction runs until a rule genuinely fails to match). |
 
 Positional arguments after options:
 - `reps` — number of deals to process
@@ -83,9 +84,11 @@ main()
 | `pack.cpp/.hpp` | Card pack, Fisher-Yates shuffle, RNG (GSL Mersenne Twister) |
 | `fnscpp.cpp` | Hand evaluation: HCP, suit lengths, key-card counts, shape/pattern matching |
 | `fns_common.cpp` | C-linkage evaluation helpers shared with the parser |
-| `parse_rules.cpp/.h` | Reads a rules file, runs it through `majMinExpand`, parses the result |
+| `parse_rules.cpp/.h` | Reads a rules file, runs it through `majMinExpand`, then `trumpAskExpand`, parses the result |
 | `majMinExpand.hpp/.cpp` | Maj/Min/OMaj/OMin/BMaj/BMin macro expansion and bid-sequence legality checking (see `hand-spec.md`); shared by Bidder and Dealer |
-| `bid.hpp` | `bid` type (integer 0–39), strain/level accessors, vulnerability enum — used by `majMinExpand` and Bidder's convention-tree builder alike |
+| `majMinExpandInternal.hpp` | Narrow exposure of `majMinExpand.cpp`'s bid-sequence-name legality check (`isWellFormedConcreteBidSequenceName()`) for `trumpAskExpand.cpp`'s grafting step, without exposing its internal token types |
+| `trumpAskExpand.hpp/.cpp` | Trump context (`@`, `Trump<suffix>`) and ask-template (`$.?.Name.`, `:?`) resolution — a further preprocessing pass, run after `majMinExpand`, that also ends by producing ordinary concrete rule text (see `hand-spec.md`'s "Trump Context" and "Ask Templates"); shared by Bidder and Dealer |
+| `bid.hpp` | `bid` type (integer 0–39), strain/level accessors, vulnerability enum — used by `majMinExpand`/`trumpAskExpand` and Bidder's convention-tree builder alike |
 | `tnode.cpp/.h` | Parse tree node type for rule expressions; also owns the `$Name` -> node lookup, a hash map keyed per definition tree (rather than a linear scan) since one process may load several independent rules files (see `biddingSystem` below); `combineRule()`/`negateRule()` (Bidder-only) live here too |
 | `simplify.hpp/.cpp` | `simplifyRule()`: folds redundant comparisons and propagates context into `OR` branches, hooked into `combineRule()` — see `hand-spec.md`'s "Rule Simplification". No Bidder-specific dependency, usable by Dealer too, though nothing there calls it yet |
 | `rawScore.cpp/.h` | Bridge scoring: raw trick-count → contract score |
@@ -179,6 +182,7 @@ up to `VALIDATE_TARGET_SAMPLES` (3000) matching hands or `VALIDATE_MAXTRIES`
 | `GAP` | No sibling matches a reachable hand. At runtime this falls through to `suggestContract()`'s simulated guess instead of an authored bid. |
 | `UNREACHABLE` | No sampled hand satisfies the path leading to this node at all after `VALIDATE_MAXTRIES` tries — usually dead code, because an ancestor rule already rules it out. Recursion stops below an unreachable node, since nothing under it is reachable either. |
 | `DUPLICATE` | Two siblings have byte-identical rule text — almost always a copy-paste mistake, and free to detect (no sampling needed). |
+| `UNUSED-TEMPLATE` | An ask-template (`hand-spec.md`'s "Ask Templates") was declared (`$.?.Name....`) but never attached (`:?`) anywhere in the file — free to detect (no sampling needed), from `trumpAskExpand.cpp`'s own bookkeeping rather than the tree walk. |
 
 `findMatchingChild()` (the sibling-matching logic) is shared verbatim between
 the live auction (`nextBid()`) and `--validate`'s tree walk, so the two can
@@ -186,8 +190,10 @@ never disagree about what "reachable"/"matches" means.
 
 Findings are logged as `[validate] OVERLAP/GAP/UNREACHABLE/DUPLICATE at <path>: ...`
 warnings (an empty path means the opening bid), each with a sample offending
-hand and, for `OVERLAP`, the names of the tied siblings. A one-line summary per
-system (`decisionPoint`/`overlap`/`gap`/`unreachable`/`duplicate-text` counts)
+hand and, for `OVERLAP`, the names of the tied siblings; `UNUSED-TEMPLATE`
+findings are logged separately (no `<path>`, since a template isn't tied to
+one attachment point). A one-line summary per system (`decisionPoint`/
+`overlap`/`gap`/`unreachable`/`duplicate-text`/`unusedTemplates` counts)
 is logged at the end. `--validate` always exits 0 — it's a diagnostic report,
 not a pass/fail gate; a nonzero-findings run isn't treated as a build failure.
 
@@ -222,6 +228,7 @@ Overlap                            25             36
 Gap                                21             54
 Unreachable                         0              7
 Duplicate-text                      2              3
+Unused templates                    0              1
 ```
 
 | Row | Meaning |
@@ -233,6 +240,7 @@ Duplicate-text                      2              3
 | `Pure path waypoints` | Depth>0 nodes with no rule of their own — exist only as a prefix for a deeper `$.`-sequence (see `biddingSystem::processRule`). |
 | `Max auction depth` | Deepest node actually visited by the walk. |
 | `Decision points`, `Overlap`, `Gap`, `Unreachable`, `Duplicate-text` | Same counts the old one-line-per-system summary reported, now table rows. |
+| `Unused templates` | Ask-templates (`hand-spec.md`'s "Ask Templates") declared but never attached — see `UNUSED-TEMPLATE` above. |
 
 Column width is derived from each system's name and its widest value, so it
 adapts to however the `-i` files were named/pathed on the command line —
@@ -318,6 +326,8 @@ output/
 | Par Bid, Par Score | Single-dummy par contract and expected score; omitted entirely under `--rules-only` (the SDA that computes them isn't run) |
 | Auction X | Auction so far when `suggestContract()` was invoked for system X, or the whole final auction if a rule ended it naturally without ever guessing. Under `--rules-only`, this is the only per-system column, since every auction is treated as incomplete. |
 | Bidding X, Contract X, Score X, IMPs vs Par X | Per-system columns (one set per `-i` file); omitted entirely under `--rules-only` |
+
+X above is a *run*: one `-i` file by itself, or `file (nrules=N)` when `--nrules` is given more than one value — see `--nrules` above. One full set of these columns is written per run, in system-major/nrules-minor order.
 
 ---
 

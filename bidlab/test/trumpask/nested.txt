@@ -1,0 +1,15 @@
+## Nested ask-templates: RKCB's "5H" response (2 keycards, no queen)
+## itself attaches a follow-up queen-ask template (QASK), demonstrating
+## multi-level grafting and that Trump still resolves correctly for the
+## deeper, grafted-under-a-grafted-node rules.
+$.1S.3S@.4N. := (Points>=12) :? RKCB;
+
+$.?.RKCB.5C. := (Trumpkcs ?= 1) OR (Trumpkcs ?= 4);
+$.?.RKCB.5D. := (Trumpkcs ?= 0) OR (Trumpkcs ?= 3);
+$.?.RKCB.5H. := (Trumpkcs ?= 2) AND NOT (Trumpq) :? QASK;
+$.?.RKCB.5S. := (Trumpkcs ?= 2) AND (Trumpq);
+
+$.?.QASK.5N.    := (Points>=15);
+$.?.QASK.5N.6C. := NOT (Trumpq);
+$.?.QASK.5N.6D. := (Trumpq);
+END
